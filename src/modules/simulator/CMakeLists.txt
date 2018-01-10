@@ -30,6 +30,23 @@
 # POSSIBILITY OF SUCH DAMAGE.
 #
 ############################################################################
+
+option(ENABLE_UART_RC_INPUT "Enable RC Input from UART mavlink connection" OFF)
+
+if(ENABLE_UART_RC_INPUT)
+	if (APPLE)
+		set(PIXHAWK_DEVICE "/dev/cu.usbmodem1")
+	elseif (UNIX AND NOT APPLE)
+		set(PIXHAWK_DEVICE "/dev/ttyACM0")
+	elseif (WIN32)
+		set(PIXHAWK_DEVICE "COM3")
+	endif()
+		
+	set(PIXHAWK_DEVICE_BAUD 115200)
+endif()
+configure_file(simulator_config.h.in simulator_config.h @ONLY)
+include_directories(${CMAKE_CURRENT_BINARY_DIR})
+
 set(SIMULATOR_SRCS simulator.cpp)
 if (NOT ${OS} STREQUAL "qurt")
 	list(APPEND SIMULATOR_SRCS
@@ -40,15 +57,11 @@ px4_add_module(
 	MODULE modules__simulator
 	MAIN simulator
 	COMPILE_FLAGS
-		-Wno-attributes
-		-Wno-packed
-		-Wno-packed
+	INCLUDES
+		${PX4_SOURCE_DIR}/mavlink/include/mavlink
 	SRCS
 		${SIMULATOR_SRCS}
 	DEPENDS
+		git_mavlink_v2
 		platforms__common
-		git_jmavsim
-		git_gazebo
 	)
-
-# vim: set noet ft=cmake fenc=utf-8 ff=unix : 

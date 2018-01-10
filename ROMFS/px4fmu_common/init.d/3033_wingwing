@@ -2,9 +2,10 @@
 #
 # @name Wing Wing (aka Z-84) Flying Wing
 #
-# @url https://pixhawk.org/platforms/planes/z-84_wing_wing
+# @url https://docs.px4.io/en/framebuild_plane/wing_wing_z84.html
 #
 # @type Flying Wing
+# @class Plane
 #
 # @output MAIN1 left aileron
 # @output MAIN2 right aileron
@@ -25,7 +26,8 @@ then
 	param set FW_AIRSPD_MAX 15
 	param set FW_AIRSPD_MIN 10
 	param set FW_AIRSPD_TRIM 13
-	param set FW_ATT_TC 0.3
+	param set FW_R_TC 0.3
+	param set FW_P_TC 0.3
 	param set FW_L1_DAMPING 0.74
 	param set FW_L1_PERIOD 16
 	param set FW_LND_ANG 15

@@ -39,11 +39,13 @@
 #pragma once
 
 #include <px4_posix.h>
-#include <uORB/topics/hil_sensor.h>
 #include <uORB/topics/manual_control_setpoint.h>
 #include <uORB/topics/actuator_outputs.h>
 #include <uORB/topics/vehicle_attitude.h>
+#include <uORB/topics/vehicle_global_position.h>
 #include <uORB/topics/vehicle_status.h>
+#include <uORB/topics/battery_status.h>
+#include <uORB/topics/parameter_update.h>
 #include <drivers/drv_accel.h>
 #include <drivers/drv_gyro.h>
 #include <drivers/drv_baro.h>
@@ -51,10 +53,15 @@
 #include <drivers/drv_hrt.h>
 #include <drivers/drv_rc_input.h>
 #include <systemlib/perf_counter.h>
+#include <systemlib/battery.h>
+#include <controllib/blocks.hpp>
+#include <controllib/block/BlockParam.hpp>
 #include <uORB/uORB.h>
 #include <uORB/topics/optical_flow.h>
-#include <v1.0/mavlink_types.h>
-#include <v1.0/common/mavlink.h>
+#include <uORB/topics/distance_sensor.h>
+#include <v2.0/mavlink_types.h>
+#include <v2.0/common/mavlink.h>
+#include <geo/geo.h>
 namespace simulator
 {
 
@@ -106,6 +113,7 @@ struct RawAirspeedData {
 
 #pragma pack(push, 1)
 struct RawGPSData {
+	int64_t timestamp;
 	int32_t lat;
 	int32_t lon;
 	int32_t alt;
@@ -129,10 +137,11 @@ public:
 		_max_readers(readers),
 		_report_len(sizeof(RType))
 	{
+		memset(_buf, 0, sizeof(_buf));
 		px4_sem_init(&_lock, 0, _max_readers);
 	}
 
-	~Report() {};
+	~Report() {}
 
 	bool copyData(void *outbuf, int len)
 	{
@@ -178,7 +187,7 @@ protected:
 
 };
 
-class Simulator
+class Simulator : public control::SuperBlock
 {
 public:
 	static Simulator *getInstance();
@@ -216,7 +225,7 @@ public:
 	bool isInitialized() { return _initialized; }
 
 private:
-	Simulator() :
+	Simulator() : SuperBlock(nullptr, "SIM"),
 		_accel(1),
 		_mpu(1),
 		_baro(1),
@@ -235,22 +244,65 @@ private:
 		_baro_pub(nullptr),
 		_gyro_pub(nullptr),
 		_mag_pub(nullptr),
-		_initialized(false)
+		_flow_pub(nullptr),
+		_vision_position_pub(nullptr),
+		_vision_attitude_pub(nullptr),
+		_dist_pub(nullptr),
+		_battery_pub(nullptr),
+		_param_sub(-1),
+		_initialized(false),
+		_realtime_factor(1.0),
+		_system_type(0)
 #ifndef __PX4_QURT
 		,
 		_rc_channels_pub(nullptr),
-		_actuator_outputs_sub(-1),
+		_attitude_pub(nullptr),
+		_gpos_pub(nullptr),
+		_lpos_pub(nullptr),
+		_actuator_outputs_sub{},
 		_vehicle_attitude_sub(-1),
 		_manual_sub(-1),
 		_vehicle_status_sub(-1),
+		_hil_local_proj_ref(),
+		_hil_local_proj_inited(false),
+		_hil_ref_lat(0),
+		_hil_ref_lon(0),
+		_hil_ref_alt(0),
+		_hil_ref_timestamp(0),
 		_rc_input{},
 		_actuators{},
 		_attitude{},
 		_manual{},
-		_vehicle_status{}
+		_vehicle_status{},
+		_battery_drain_interval_s(this, "BAT_DRAIN")
 #endif
-	{}
-	~Simulator() { _instance = NULL; }
+	{
+		// We need to know the type for the correct mapping from
+		// actuator controls to the hil actuator message.
+		param_t param_system_type = param_find("MAV_TYPE");
+		param_get(param_system_type, &_system_type);
+
+		for (unsigned i = 0; i < (sizeof(_actuator_outputs_sub) / sizeof(_actuator_outputs_sub[0])); i++) {
+			_actuator_outputs_sub[i] = -1;
+		}
+
+		simulator::RawGPSData gps_data{};
+		gps_data.eph = UINT16_MAX;
+		gps_data.epv = UINT16_MAX;
+		_gps.writeData(&gps_data);
+
+		_param_sub = orb_subscribe(ORB_ID(parameter_update));
+
+		_battery_status.timestamp = hrt_absolute_time();
+	}
+	~Simulator()
+	{
+		if (_instance != nullptr) {
+			delete _instance;
+		}
+
+		_instance = NULL;
+	}
 
 	void initializeSensorData();
 
@@ -279,39 +331,71 @@ private:
 	orb_advert_t _gyro_pub;
 	orb_advert_t _mag_pub;
 	orb_advert_t _flow_pub;
+	orb_advert_t _vision_position_pub;
+	orb_advert_t _vision_attitude_pub;
+	orb_advert_t _dist_pub;
+	orb_advert_t _battery_pub;
+
+	int				_param_sub;
 
 	bool _initialized;
+	double _realtime_factor;		///< How fast the simulation runs in comparison to real system time
+	hrt_abstime _last_sim_timestamp;
+	hrt_abstime _last_sitl_timestamp;
+
+	// Lib used to do the battery calculations.
+	Battery _battery;
+	battery_status_s _battery_status{};
+
+	// For param MAV_TYPE
+	int32_t _system_type;
 
 	// class methods
 	int publish_sensor_topics(mavlink_hil_sensor_t *imu);
 	int publish_flow_topic(mavlink_hil_optical_flow_t *flow);
+	int publish_ev_topic(mavlink_vision_position_estimate_t *ev_mavlink);
+	int publish_distance_topic(mavlink_distance_sensor_t *dist);
 
 #ifndef __PX4_QURT
 	// uORB publisher handlers
 	orb_advert_t _rc_channels_pub;
+	orb_advert_t _attitude_pub;
+	orb_advert_t _gpos_pub;
+	orb_advert_t _lpos_pub;
 
 	// uORB subscription handlers
-	int _actuator_outputs_sub;
+	int _actuator_outputs_sub[ORB_MULTI_MAX_INSTANCES];
 	int _vehicle_attitude_sub;
 	int _manual_sub;
 	int _vehicle_status_sub;
 
+	// hil map_ref data
+	struct map_projection_reference_s _hil_local_proj_ref;
+	bool _hil_local_proj_inited;
+	double _hil_ref_lat;
+	double _hil_ref_lon;
+	float _hil_ref_alt;
+	uint64_t _hil_ref_timestamp;
+
 	// uORB data containers
 	struct rc_input_values _rc_input;
-	struct actuator_outputs_s _actuators;
+	struct actuator_outputs_s _actuators[ORB_MULTI_MAX_INSTANCES];
 	struct vehicle_attitude_s _attitude;
 	struct manual_control_setpoint_s _manual;
 	struct vehicle_status_s _vehicle_status;
 
+	control::BlockParamFloat _battery_drain_interval_s; ///< battery drain interval
+
 	void poll_topics();
 	void handle_message(mavlink_message_t *msg, bool publish);
 	void send_controls();
-	void pollForMAVLinkMessages(bool publish);
+	void pollForMAVLinkMessages(bool publish, int udp_port);
 
-	void pack_actuator_message(mavlink_hil_controls_t &actuator_msg);
-	void send_mavlink_message(const uint8_t msgid, const void *msg, uint8_t component_ID);
+	void pack_actuator_message(mavlink_hil_actuator_controls_t &actuator_msg, unsigned index);
+	void send_mavlink_message(const mavlink_message_t &aMsg);
 	void update_sensors(mavlink_hil_sensor_t *imu);
 	void update_gps(mavlink_hil_gps_t *gps_sim);
+	void parameters_update(bool force);
 	static void *sending_trampoline(void *);
 	void send();
 #endif

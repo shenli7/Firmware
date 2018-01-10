@@ -30,17 +30,20 @@
 # POSSIBILITY OF SUCH DAMAGE.
 #
 ############################################################################
+
+include_directories(${PX4_SOURCE_DIR}/mavlink/include/mavlink)
+
 px4_add_module(
 	MODULE modules__mavlink__mavlink_tests
 	MAIN mavlink_tests
-	STACK 5000
+	STACK_MAIN 5000
 	COMPILE_FLAGS
-		-Weffc++
+		-Wno-sign-compare # TODO: fix all sign-compare
 		-DMAVLINK_FTP_UNIT_TEST
-		-Wno-attributes
-		-Wno-packed
-		-Wno-packed
-		-Os
+		#-DMAVLINK_FTP_DEBUG
+		-DMavlinkStream=MavlinkStreamTest
+		-DMavlinkFTP=MavlinkFTPTest
+		-Wno-extra-semi
 	SRCS
 		mavlink_tests.cpp
 		mavlink_ftp_test.cpp
@@ -50,4 +53,4 @@ px4_add_module(
 	DEPENDS
 		platforms__common
 	)
-# vim: set noet ft=cmake fenc=utf-8 ff=unix : 
+# vim: set noet ft=cmake fenc=utf-8 ff=unix :

@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- *   Copyright (c) 2014, 2015 PX4 Development Team. All rights reserved.
+ *   Copyright (c) 2014-2016 PX4 Development Team. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -32,105 +32,29 @@
  ****************************************************************************/
 
 /**
- * @file land_detector.c
- * Land detector algorithm parameters.
+ * Total flight time in microseconds
  *
- * @author Johan Jansen <jnsn.johan@gmail.com>
+ * Total flight time of this autopilot. Higher 32 bits of the value.
+ * Flight time in microseconds = (LND_FLIGHT_T_HI << 32) | LND_FLIGHT_T_LO.
+ *
+ * @min 0
+ * @volatile
+ * @category system
+ * @group Land Detector
+ *
  */
+PARAM_DEFINE_INT32(LND_FLIGHT_T_HI, 0);
 
 /**
- * Multicopter max climb rate
+ * Total flight time in microseconds
  *
- * Maximum vertical velocity allowed in the landed state (m/s up and down)
+ * Total flight time of this autopilot. Lower 32 bits of the value.
+ * Flight time in microseconds = (LND_FLIGHT_T_HI << 32) | LND_FLIGHT_T_LO.
  *
- * @unit m/s
- *
+ * @min 0
+ * @volatile
+ * @category system
  * @group Land Detector
+ *
  */
-PARAM_DEFINE_FLOAT(LNDMC_Z_VEL_MAX, 0.70f);
-
-/**
- * Multicopter max horizontal velocity
- *
- * Maximum horizontal velocity allowed in the landed state (m/s)
- *
- * @unit m/s
- *
- * @group Land Detector
- */
-PARAM_DEFINE_FLOAT(LNDMC_XY_VEL_MAX, 1.50f);
-
-/**
- * Multicopter max rotation
- *
- * Maximum allowed around each axis allowed in the landed state (degrees per second)
- *
- * @unit deg/s
- *
- * @group Land Detector
- */
-PARAM_DEFINE_FLOAT(LNDMC_ROT_MAX, 20.0f);
-
-/**
- * Multicopter max throttle
- *
- * Maximum actuator output on throttle allowed in the landed state
- *
- * @min 0.1
- * @max 0.5
- *
- * @group Land Detector
- */
-PARAM_DEFINE_FLOAT(LNDMC_THR_MAX, 0.15f);
-
-/**
- * Fixedwing max horizontal velocity
- *
- * Maximum horizontal velocity allowed in the landed state (m/s)
- *
- * @min 0.5
- * @max 10
- * @unit m/s
- *
- * @group Land Detector
- */
-PARAM_DEFINE_FLOAT(LNDFW_VEL_XY_MAX, 5.0f);
-
-/**
- * Fixedwing max climb rate
- *
- * Maximum vertical velocity allowed in the landed state (m/s up and down)
- *
- * @min 5
- * @max 20
- * @unit m/s
- *
- * @group Land Detector
- */
-PARAM_DEFINE_FLOAT(LNDFW_VEL_Z_MAX, 10.0f);
-
-/**
- * Fixedwing max short-term velocity
- *
- * Maximum velocity integral in flight direction allowed in the landed state (m/s)
- *
- * @min 2
- * @max 10
- * @unit m/s
- *
- * @group Land Detector
- */
-PARAM_DEFINE_FLOAT(LNDFW_VELI_MAX, 4.0f);
-
-/**
- * Airspeed max
- *
- * Maximum airspeed allowed in the landed state (m/s)
- *
- * @min 4
- * @max 20
- * @unit m/s
- *
- * @group Land Detector
- */
-PARAM_DEFINE_FLOAT(LNDFW_AIRSPD_MAX, 8.00f);
+PARAM_DEFINE_INT32(LND_FLIGHT_T_LO, 0);

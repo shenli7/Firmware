@@ -1,6 +1,6 @@
 ############################################################################
 #
-#   Copyright (c) 2015-2016 PX4 Development Team. All rights reserved.
+#   Copyright (c) 2015-2017 PX4 Development Team. All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions
@@ -30,25 +30,21 @@
 # POSSIBILITY OF SUCH DAMAGE.
 #
 ############################################################################
-set(SENSORS_SRCS sensors.cpp)
-if (${OS} STREQUAL "qurt")
-	list(APPEND SENSORS_SRCS
-		sensors_init_qurt.cpp)
-	else()
-	list(APPEND SENSORS_SRCS
-		sensors_init.cpp)
-endif()
 
 px4_add_module(
 	MODULE modules__sensors
 	MAIN sensors
 	PRIORITY "SCHED_PRIORITY_MAX-5"
-	STACK 1200
+	STACK_MAIN 1300
 	COMPILE_FLAGS
-		-Wno-type-limits
-		-O3
+		-Wno-sign-compare # TODO: fix all sign-compare
 	SRCS
-		${SENSORS_SRCS}
+		voted_sensors_update.cpp
+		rc_update.cpp
+		sensors.cpp
+		parameters.cpp
+		temperature_compensation.cpp
+
 	DEPENDS
 		platforms__common
 	)

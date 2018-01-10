@@ -54,7 +54,6 @@
 
 
 /* Configuration Constants */
-#define LL40LS_BUS          PX4_I2C_BUS_EXPANSION
 #define LL40LS_BASEADDR     0x62 /* 7-bit address */
 #define LL40LS_BASEADDR_OLD     0x42 /* previous 7-bit address */
 
@@ -72,7 +71,9 @@
 class LidarLiteI2C : public LidarLite, public device::I2C
 {
 public:
-	LidarLiteI2C(int bus, const char *path, int address = LL40LS_BASEADDR);
+	LidarLiteI2C(int bus, const char *path,
+		     uint8_t rotation = distance_sensor_s::ROTATION_DOWNWARD_FACING,
+		     int address = LL40LS_BASEADDR);
 	virtual ~LidarLiteI2C();
 
 	int         init() override;
@@ -90,6 +91,8 @@ public:
 	 */
 	void print_registers() override;
 
+	const char *get_dev_name() override;
+
 protected:
 	int         probe();
 	int         read_reg(uint8_t reg, uint8_t &val);
@@ -99,6 +102,7 @@ protected:
 	int                 reset_sensor();
 
 private:
+	uint8_t _rotation;
 	work_s              _work;
 	ringbuffer::RingBuffer          *_reports;
 	bool                _sensor_ok;
@@ -110,7 +114,6 @@ private:
 
 	perf_counter_t      _sample_perf;
 	perf_counter_t      _comms_errors;
-	perf_counter_t      _buffer_overflows;
 	perf_counter_t      _sensor_resets;
 	perf_counter_t      _sensor_zero_resets;
 	uint16_t        _last_distance;
@@ -119,9 +122,6 @@ private:
 	volatile bool       _pause_measurements;
 	uint8_t		_hw_version;
 	uint8_t		_sw_version;
-
-	/**< the bus the device is connected to */
-	int         _bus;
 
 	/**
 	 * LidarLite specific transfer function. This is needed

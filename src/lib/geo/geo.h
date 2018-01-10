@@ -45,7 +45,6 @@
 
 #pragma once
 #include <platforms/px4_defines.h>
-__BEGIN_DECLS
 
 #include "geo_lookup/geo_mag_declination.h"
 
@@ -66,18 +65,20 @@ struct crosstrack_error_s {
 
 /* lat/lon are in radians */
 struct map_projection_reference_s {
+	uint64_t timestamp;
 	double lat_rad;
 	double lon_rad;
 	double sin_lat;
 	double cos_lat;
 	bool init_done;
-	uint64_t timestamp;
 };
 
 struct globallocal_converter_reference_s {
 	float alt;
 	bool init_done;
 };
+
+__BEGIN_DECLS
 
 /**
  * Checks if global projection was initialized

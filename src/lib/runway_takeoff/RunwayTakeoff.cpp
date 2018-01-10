@@ -45,21 +45,20 @@
 #include "RunwayTakeoff.h"
 #include <controllib/blocks.hpp>
 #include <controllib/block/BlockParam.hpp>
-#include <mavlink/mavlink_log.h>
+#include <systemlib/mavlink_log.h>
 #include <mathlib/mathlib.h>
 
 namespace runwaytakeoff
 {
 
 RunwayTakeoff::RunwayTakeoff() :
-	SuperBlock(NULL, "RWTO"),
+	SuperBlock(nullptr, "RWTO"),
 	_state(),
 	_initialized(false),
 	_initialized_time(0),
 	_init_yaw(0),
 	_climbout(false),
 	_throttle_ramp_time(2 * 1e6),
-	_start_wp(),
 	_runway_takeoff_enabled(this, "TKOFF"),
 	_heading_mode(this, "HDG"),
 	_nav_alt(this, "NAV_ALT"),
@@ -92,7 +91,7 @@ void RunwayTakeoff::init(float yaw, double current_lat, double current_lon)
 }
 
 void RunwayTakeoff::update(float airspeed, float alt_agl,
-			   double current_lat, double current_lon, int mavlink_fd)
+			   double current_lat, double current_lon, orb_advert_t *mavlink_log_pub)
 {
 
 	switch (_state) {
@@ -106,7 +105,7 @@ void RunwayTakeoff::update(float airspeed, float alt_agl,
 	case RunwayTakeoffState::CLAMPED_TO_RUNWAY:
 		if (airspeed > _airspeed_min.get() * _min_airspeed_scaling.get()) {
 			_state = RunwayTakeoffState::TAKEOFF;
-			mavlink_log_info(mavlink_fd, "#Takeoff airspeed reached");
+			mavlink_log_info(mavlink_log_pub, "#Takeoff airspeed reached");
 		}
 
 		break;
@@ -124,7 +123,7 @@ void RunwayTakeoff::update(float airspeed, float alt_agl,
 				_start_wp(1) = (float)current_lon;
 			}
 
-			mavlink_log_info(mavlink_fd, "#Climbout");
+			mavlink_log_info(mavlink_log_pub, "#Climbout");
 		}
 
 		break;
@@ -133,7 +132,7 @@ void RunwayTakeoff::update(float airspeed, float alt_agl,
 		if (alt_agl > _climbout_diff.get()) {
 			_climbout = false;
 			_state = RunwayTakeoffState::FLY;
-			mavlink_log_info(mavlink_fd, "#Navigating to waypoint");
+			mavlink_log_info(mavlink_log_pub, "#Navigating to waypoint");
 		}
 
 		break;

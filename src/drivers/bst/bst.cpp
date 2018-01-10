@@ -49,6 +49,10 @@
 #include <math.h>
 #include <uORB/topics/vehicle_gps_position.h>
 #include <uORB/topics/battery_status.h>
+#include <uORB/topics/vehicle_attitude.h>
+#include <mathlib/math/Quaternion.hpp>
+
+using namespace matrix;
 
 #define BST_DEVICE_PATH "/dev/bst0"
 
@@ -269,7 +273,7 @@ void BST::start()
 	_gps_sub = orb_subscribe(ORB_ID(vehicle_gps_position));
 	_battery_sub = orb_subscribe(ORB_ID(battery_status));
 
-	set_address(0x00);	// General call address
+	set_device_address(0x00);	// General call address
 
 	work_queue(LPWORK, &_work, BST::cycle_trampoline, this, 0);
 }
@@ -289,11 +293,13 @@ void BST::cycle()
 		if (updated) {
 			vehicle_attitude_s att;
 			orb_copy(ORB_ID(vehicle_attitude), _attitude_sub, &att);
+			Quatf q(att.q);
+			Eulerf euler(q);
 			BSTPacket<BSTAttitude> bst_att = {};
 			bst_att.type = 0x1E;
-			bst_att.payload.roll = swap_int32(att.roll * 10000);
-			bst_att.payload.pitch = swap_int32(att.pitch * 10000);
-			bst_att.payload.yaw = swap_int32(att.yaw * 10000);
+			bst_att.payload.roll = swap_int32(euler.phi() * 10000);
+			bst_att.payload.pitch = swap_int32(euler.theta() * 10000);
+			bst_att.payload.yaw = swap_int32(euler.psi() * 10000);
 			send_packet(bst_att);
 		}
 

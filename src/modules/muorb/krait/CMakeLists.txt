@@ -30,20 +30,20 @@
 # POSSIBILITY OF SUCH DAMAGE.
 #
 ############################################################################
-include_directories(${CMAKE_BINARY_DIR}/src/firmware/posix)
-include_directories(
-	${HEXAGON_SDK_ROOT}/inc/stddef
-	${HEXAGON_SDK_ROOT}/lib/common/rpcmem
-	)
+set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${PX4_SOURCE_DIR}/cmake/cmake_hexagon")
+include(hexagon_sdk)
 
 px4_add_module(
 	MODULE modules__muorb__krait
 	MAIN muorb
+	INCLUDES
+		${HEXAGON_SDK_INCLUDES}
+		${PX4_BINARY_DIR}/platforms/posix
 	SRCS
 		uORBKraitFastRpcChannel.cpp
 		px4muorb_KraitRpcWrapper.cpp
 		muorb_main.cpp
 	DEPENDS
 		platforms__common
+		generate_px4muorb_stubs
 	)
-# vim: set noet ft=cmake fenc=utf-8 ff=unix :

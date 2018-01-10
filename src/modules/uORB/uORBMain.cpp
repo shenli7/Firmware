@@ -33,21 +33,52 @@
 
 #include <string.h>
 #include "uORBDevices.hpp"
+#include "uORBManager.hpp"
 #include "uORB.h"
 #include "uORBCommon.hpp"
-
-#ifndef __PX4_QURT
-#include "uORBTest_UnitTest.hpp"
-#endif
+#include <px4_log.h>
+#include <px4_module.h>
 
 extern "C" { __EXPORT int uorb_main(int argc, char *argv[]); }
 
 static uORB::DeviceMaster *g_dev = nullptr;
 static void usage()
 {
-	PX4_INFO("Usage: uorb 'start', 'test', 'latency_test' or 'status'");
-}
+	PRINT_MODULE_DESCRIPTION(
+		R"DESCR_STR(
+### Description
+uORB is the internal pub-sub messaging system, used for communication between modules.
 
+It is typically started as one of the very first modules and most other modules depend on it.
+
+### Implementation
+No thread or work queue is needed, the module start only makes sure to initialize the shared global state.
+Communication is done via shared memory.
+The implementation is asynchronous and lock-free, ie. a publisher does not wait for a subscriber and vice versa.
+This is achieved by having a separate buffer between a publisher and a subscriber.
+
+The code is optimized to minimize the memory footprint and the latency to exchange messages.
+
+The interface is based on file descriptors: internally it uses `read`, `write` and `ioctl`. Except for the
+publications, which use `orb_advert_t` handles, so that they can be used from interrupts as well (on NuttX).
+
+Messages are defined in the `/msg` directory. They are converted into C/C++ code at build-time.
+
+If compiled with ORB_USE_PUBLISHER_RULES, a file with uORB publication rules can be used to configure which
+modules are allowed to publish which topics. This is used for system-wide replay.
+
+### Examples
+Monitor topic publication rates. Besides `top`, this is an important command for general system inspection:
+$ uorb top
+)DESCR_STR");
+
+	PRINT_MODULE_USAGE_NAME("uorb", "communication");
+	PRINT_MODULE_USAGE_COMMAND("start");
+	PRINT_MODULE_USAGE_COMMAND_DESCR("status", "Print topic statistics");
+	PRINT_MODULE_USAGE_COMMAND_DESCR("top", "Monitor topic publication rates");
+	PRINT_MODULE_USAGE_PARAM_FLAG('a', "print all instead of only currently publishing topics", true);
+	PRINT_MODULE_USAGE_ARG("<filter1> [<filter2>]", "topic(s) to match (implies -a)", true);
+}
 
 int
 uorb_main(int argc, char *argv[])
@@ -59,8 +90,6 @@ uorb_main(int argc, char *argv[])
 
 	/*
 	 * Start/load the driver.
-	 *
-	 * XXX it would be nice to have a wrapper for this...
 	 */
 	if (!strcmp(argv[1], "start")) {
 
@@ -70,60 +99,45 @@ uorb_main(int argc, char *argv[])
 			return 0;
 		}
 
-		/* create the driver */
-		g_dev = new uORB::DeviceMaster(uORB::PUBSUB);
-
-		if (g_dev == nullptr) {
-			PX4_ERR("driver alloc failed");
+		if (!uORB::Manager::initialize()) {
+			PX4_ERR("uorb manager alloc failed");
 			return -ENOMEM;
 		}
 
-		if (OK != g_dev->init()) {
-			PX4_ERR("driver init failed");
-			delete g_dev;
-			g_dev = nullptr;
-			return -EIO;
+		/* create the driver */
+		g_dev = uORB::Manager::get_instance()->get_device_master(uORB::PUBSUB);
+
+		if (g_dev == nullptr) {
+			return -errno;
 		}
+
+#if !defined(__PX4_QURT) && !defined(__PX4_POSIX_EAGLE) && !defined(__PX4_POSIX_EXCELSIOR)
+		/* FIXME: this fails on Snapdragon (see https://github.com/PX4/Firmware/issues/5406),
+		 * so we disable logging messages to the ulog for now. This needs further investigations.
+		 */
+		px4_log_initialize();
+#endif
 
 		return OK;
 	}
-
-#ifndef __PX4_QURT
-
-	/*
-	 * Test the driver/device.
-	 */
-	if (!strcmp(argv[1], "test")) {
-		uORBTest::UnitTest &t = uORBTest::UnitTest::instance();
-		return t.test();
-	}
-
-	/*
-	 * Test the latency.
-	 */
-	if (!strcmp(argv[1], "latency_test")) {
-
-		uORBTest::UnitTest &t = uORBTest::UnitTest::instance();
-
-		if (argc > 2 && !strcmp(argv[2], "medium")) {
-			return t.latency_test<struct orb_test_medium>(ORB_ID(orb_test_medium), true);
-
-		} else if (argc > 2 && !strcmp(argv[2], "large")) {
-			return t.latency_test<struct orb_test_large>(ORB_ID(orb_test_large), true);
-
-		} else {
-			return t.latency_test<struct orb_test>(ORB_ID(orb_test), true);
-		}
-	}
-
-#endif
 
 	/*
 	 * Print driver information.
 	 */
 	if (!strcmp(argv[1], "status")) {
 		if (g_dev != nullptr) {
-			PX4_INFO("uorb is running");
+			g_dev->printStatistics(true);
+
+		} else {
+			PX4_INFO("uorb is not running");
+		}
+
+		return OK;
+	}
+
+	if (!strcmp(argv[1], "top")) {
+		if (g_dev != nullptr) {
+			g_dev->showTop(argv + 2, argc - 2);
 
 		} else {
 			PX4_INFO("uorb is not running");

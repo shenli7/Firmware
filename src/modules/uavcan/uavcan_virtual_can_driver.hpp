@@ -116,8 +116,7 @@ public:
 
 	~Queue()
 	{
-		while (!isEmpty())
-		{
+		while (!isEmpty()) {
 			pop();
 		}
 	}
@@ -140,7 +139,7 @@ public:
 		}
 
 		// Constructing the new item
-		Item *const item = new(ptr) Item(args...);
+		Item *const item = new (ptr) Item(args...);
 		assert(item != nullptr);
 
 		// Inserting the new item at the end of the list
@@ -345,19 +344,25 @@ class VirtualCanDriver : public uavcan::ICanDriver,
 {
 	class Event
 	{
-		FAR sem_t sem;
+		FAR px4_sem_t sem;
 
 
 	public:
 
 		int init()
 		{
-			return sem_init(&sem, 0, 0);
+			int rv = px4_sem_init(&sem, 0, 0);
+
+			if (rv == 0) {
+				px4_sem_setprotocol(&sem, SEM_PRIO_NONE);
+			}
+
+			return rv;
 		}
 
 		int deinit()
 		{
-			return sem_destroy(&sem);
+			return px4_sem_destroy(&sem);
 		}
 
 
@@ -388,7 +393,7 @@ class VirtualCanDriver : public uavcan::ICanDriver,
 						abstime.tv_nsec -= NsPerSec;
 					}
 
-					(void)sem_timedwait(&sem, &abstime);
+					(void)px4_sem_timedwait(&sem, &abstime);
 				}
 			}
 		}
@@ -396,7 +401,7 @@ class VirtualCanDriver : public uavcan::ICanDriver,
 		void signal()
 		{
 			int count;
-			int rv = sem_getvalue(&sem, &count);
+			int rv = px4_sem_getvalue(&sem, &count);
 
 			if (rv > 0 && count <= 0) {
 				px4_sem_post(&sem);
@@ -480,9 +485,9 @@ class VirtualCanDriver : public uavcan::ICanDriver,
 
 public:
 	VirtualCanDriver(unsigned arg_num_ifaces,
-		         uavcan::ISystemClock &system_clock,
-		         uavcan::IPoolAllocator& allocator,
-		         unsigned virtual_iface_block_allocation_quota) :
+			 uavcan::ISystemClock &system_clock,
+			 uavcan::IPoolAllocator &allocator,
+			 unsigned virtual_iface_block_allocation_quota) :
 		num_ifaces_(arg_num_ifaces),
 		clock_(system_clock)
 	{
@@ -494,8 +499,8 @@ public:
 		const unsigned quota_per_queue = virtual_iface_block_allocation_quota;             // 2x overcommit
 
 		for (unsigned i = 0; i < num_ifaces_; i++) {
-			ifaces_[i].construct<uavcan::IPoolAllocator&, uavcan::ISystemClock&, pthread_mutex_t&,
-					     unsigned>(allocator, clock_, driver_mutex_, quota_per_queue);
+			ifaces_[i].construct<uavcan::IPoolAllocator &, uavcan::ISystemClock &, pthread_mutex_t &,
+				unsigned>(allocator, clock_, driver_mutex_, quota_per_queue);
 		}
 	}
 

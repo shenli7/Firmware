@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- *   Copyright (c) 2013 PX4 Development Team. All rights reserved.
+ *   Copyright (c) 2013-2017 PX4 Development Team. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -42,53 +42,57 @@
 #ifndef MISSION_FEASIBILITY_CHECKER_H_
 #define MISSION_FEASIBILITY_CHECKER_H_
 
-#include <unistd.h>
-#include <uORB/topics/mission.h>
-#include <uORB/topics/navigation_capabilities.h>
 #include <dataman/dataman.h>
-#include "geofence.h"
+#include <uORB/topics/mission.h>
+#include <uORB/topics/fw_pos_ctrl_status.h>
 
+class Geofence;
+class Navigator;
 
 class MissionFeasibilityChecker
 {
 private:
-	int		_mavlink_fd;
-
-	int _capabilities_sub;
-	struct navigation_capabilities_s _nav_caps;
-
-	bool _initDone;
-	bool _dist_1wp_ok;
-	void init();
+	Navigator *_navigator{nullptr};
 
 	/* Checks for all airframes */
-	bool checkGeofence(dm_item_t dm_current, size_t nMissionItems, Geofence &geofence);
-	bool checkHomePositionAltitude(dm_item_t dm_current, size_t nMissionItems, float home_alt, bool home_valid, bool &warning_issued, bool throw_error = false);
+	bool checkGeofence(dm_item_t dm_current, size_t nMissionItems, Geofence &geofence, float home_alt, bool home_valid);
+
+	bool checkHomePositionAltitude(dm_item_t dm_current, size_t nMissionItems, float home_alt, bool home_alt_valid,
+				       bool &warning_issued, bool throw_error = false);
+
 	bool checkMissionItemValidity(dm_item_t dm_current, size_t nMissionItems, bool condition_landed);
-	bool check_dist_1wp(dm_item_t dm_current, size_t nMissionItems, double curr_lat, double curr_lon, float dist_first_wp, bool &warning_issued);
-	bool isPositionCommand(unsigned cmd);
+
+	bool checkDistanceToFirstWaypoint(dm_item_t dm_current, size_t nMissionItems, float max_distance, bool &warning_issued);
+	bool checkDistancesBetweenWaypoints(dm_item_t dm_current, size_t nMissionItems, float max_distance,
+					    bool &warning_issued);
 
 	/* Checks specific to fixedwing airframes */
-	bool checkMissionFeasibleFixedwing(dm_item_t dm_current, size_t nMissionItems, Geofence &geofence, float home_alt, bool home_valid);
-	bool checkFixedWingLanding(dm_item_t dm_current, size_t nMissionItems);
-	void updateNavigationCapabilities();
+	bool checkFixedwing(dm_item_t dm_current, size_t nMissionItems, fw_pos_ctrl_status_s *fw_pos_ctrl_status,
+			    float home_alt, bool home_alt_valid, float default_acceptance_rad, bool land_start_req);
+
+	bool checkFixedWingTakeoff(dm_item_t dm_current, size_t nMissionItems, float home_alt, bool home_alt_valid,
+				   float default_acceptance_rad);
+	bool checkFixedWingLanding(dm_item_t dm_current, size_t nMissionItems, fw_pos_ctrl_status_s *fw_pos_ctrl_status,
+				   bool land_start_req);
 
 	/* Checks specific to rotarywing airframes */
-	bool checkMissionFeasibleRotarywing(dm_item_t dm_current, size_t nMissionItems, Geofence &geofence, float home_alt, bool home_valid, float default_acceptance_rad);
-public:
+	bool checkRotarywing(dm_item_t dm_current, size_t nMissionItems,
+			     float home_alt, bool home_alt_valid, float default_altitude_acceptance_rad);
 
-	MissionFeasibilityChecker();
-	~MissionFeasibilityChecker() {}
+public:
+	MissionFeasibilityChecker(Navigator *navigator) : _navigator(navigator) {}
+	~MissionFeasibilityChecker() = default;
+
+	MissionFeasibilityChecker(const MissionFeasibilityChecker &) = delete;
+	MissionFeasibilityChecker &operator=(const MissionFeasibilityChecker &) = delete;
 
 	/*
 	 * Returns true if mission is feasible and false otherwise
 	 */
-	bool checkMissionFeasible(int mavlink_fd, bool isRotarywing, dm_item_t dm_current,
-		size_t nMissionItems, Geofence &geofence, float home_alt, bool home_valid,
-		double curr_lat, double curr_lon, float max_waypoint_distance, bool &warning_issued, float default_acceptance_rad,
-		bool condition_landed);
+	bool checkMissionFeasible(const mission_s &mission,
+				  float max_distance_to_1st_waypoint, float max_distance_between_waypoints,
+				  bool land_start_req);
 
 };
-
 
 #endif /* MISSION_FEASIBILITY_CHECKER_H_ */

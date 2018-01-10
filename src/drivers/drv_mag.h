@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- *   Copyright (c) 2012-2015 PX4 Development Team. All rights reserved.
+ *   Copyright (c) 2012-2016 PX4 Development Team. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -53,7 +53,7 @@
 #define mag_report sensor_mag_s
 
 /** mag scaling factors; Vout = (Vin * Vscale) + Voffset */
-struct mag_scale {
+struct mag_calibration_s {
 	float	x_offset;
 	float	x_scale;
 	float	y_offset;
@@ -74,12 +74,6 @@ struct mag_scale {
 
 /** return the mag internal sample rate in Hz */
 #define MAGIOCGSAMPLERATE	_MAGIOC(1)
-
-/** set the mag internal lowpass filter to no lower than (arg) Hz */
-#define MAGIOCSLOWPASS		_MAGIOC(2)
-
-/** return the mag internal lowpass filter in Hz */
-#define MAGIOCGLOWPASS		_MAGIOC(3)
 
 /** set the mag scaling constants to the structure pointed to by (arg) */
 #define MAGIOCSSCALE		_MAGIOC(4)
@@ -107,5 +101,8 @@ struct mag_scale {
 
 /** enable/disable temperature compensation */
 #define MAGIOCSTEMPCOMP		_MAGIOC(12)
+
+/** get the current mag type */
+#define MAGIOCTYPE			_MAGIOC(13)
 
 #endif /* _DRV_MAG_H */

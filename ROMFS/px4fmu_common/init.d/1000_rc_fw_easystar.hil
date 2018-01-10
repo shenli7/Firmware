@@ -3,11 +3,14 @@
 # @name HILStar (XPlane)
 #
 # @type Simulation
+# @class Plane
 #
 # @output MAIN1 aileron
 # @output MAIN2 elevator
 # @output MAIN3 rudder
 # @output MAIN4 throttle
+# @output MAIN5 flaps
+# @output MAIN6 gear
 #
 # @maintainer Lorenz Meier <lorenz@px4.io>
 #
@@ -20,7 +23,8 @@ then
 	param set FW_AIRSPD_MAX 20
 	param set FW_AIRSPD_MIN 12
 	param set FW_AIRSPD_TRIM 14
-	param set FW_ATT_TC 0.3
+	param set FW_R_TC 0.3
+	param set FW_P_TC 0.3
 	param set FW_L1_DAMPING 0.74
 	param set FW_L1_PERIOD 16
 	param set FW_LND_ANG 15
@@ -40,5 +44,5 @@ then
 	param set RWTO_TKOFF 1
 fi
 
-set HIL yes
+param set SYS_HITL 1
 set MIXER AERT

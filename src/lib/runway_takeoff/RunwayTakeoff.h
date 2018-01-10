@@ -48,7 +48,7 @@
 #include <drivers/drv_hrt.h>
 #include <controllib/blocks.hpp>
 #include <controllib/block/BlockParam.hpp>
-#include <mavlink/mavlink_log.h>
+#include <systemlib/mavlink_log.h>
 #include <mathlib/mathlib.h>
 
 namespace runwaytakeoff
@@ -69,17 +69,17 @@ public:
 	~RunwayTakeoff();
 
 	void init(float yaw, double current_lat, double current_lon);
-	void update(float airspeed, float alt_agl, double current_lat, double current_lon, int mavlink_fd);
+	void update(float airspeed, float alt_agl, double current_lat, double current_lon, orb_advert_t *mavlink_log_pub);
 
-	RunwayTakeoffState getState() { return _state; };
-	bool isInitialized() { return _initialized; };
+	RunwayTakeoffState getState() { return _state; }
+	bool isInitialized() { return _initialized; }
 
-	bool runwayTakeoffEnabled() { return (bool)_runway_takeoff_enabled.get(); };
-	float getMinAirspeedScaling() { return _min_airspeed_scaling.get(); };
-	float getInitYaw() { return _init_yaw; };
+	bool runwayTakeoffEnabled() { return _runway_takeoff_enabled.get(); }
+	float getMinAirspeedScaling() { return _min_airspeed_scaling.get(); }
+	float getInitYaw() { return _init_yaw; }
 
 	bool controlYaw();
-	bool climbout() { return _climbout; };
+	bool climbout() { return _climbout; }
 	float getPitch(float tecsPitch);
 	float getRoll(float navigatorRoll);
 	float getYaw(float navigatorYaw);
@@ -103,7 +103,7 @@ private:
 	math::Vector<2> _start_wp;
 
 	/** parameters **/
-	control::BlockParamInt _runway_takeoff_enabled;
+	control::BlockParamBool _runway_takeoff_enabled;
 	control::BlockParamInt _heading_mode;
 	control::BlockParamFloat _nav_alt;
 	control::BlockParamFloat _takeoff_throttle;

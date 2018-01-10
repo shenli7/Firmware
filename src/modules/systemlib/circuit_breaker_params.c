@@ -49,8 +49,10 @@
  * checks in the commander.
  * WARNING: ENABLING THIS CIRCUIT BREAKER IS AT OWN RISK
  *
+ * @reboot_required true
  * @min 0
  * @max 894281
+ * @category Developer
  * @group Circuit Breaker
  */
 PARAM_DEFINE_INT32(CBRK_SUPPLY_CHK, 0);
@@ -62,8 +64,10 @@ PARAM_DEFINE_INT32(CBRK_SUPPLY_CHK, 0);
  * controller uORB publication.
  * WARNING: ENABLING THIS CIRCUIT BREAKER IS AT OWN RISK
  *
+ * @reboot_required true
  * @min 0
  * @max 140253
+ * @category Developer
  * @group Circuit Breaker
  */
 PARAM_DEFINE_INT32(CBRK_RATE_CTRL, 0);
@@ -74,8 +78,10 @@ PARAM_DEFINE_INT32(CBRK_RATE_CTRL, 0);
  * Setting this parameter to 22027 will disable IO safety.
  * WARNING: ENABLING THIS CIRCUIT BREAKER IS AT OWN RISK
  *
+ * @reboot_required true
  * @min 0
  * @max 22027
+ * @category Developer
  * @group Circuit Breaker
  */
 PARAM_DEFINE_INT32(CBRK_IO_SAFETY, 0);
@@ -86,8 +92,10 @@ PARAM_DEFINE_INT32(CBRK_IO_SAFETY, 0);
  * Setting this parameter to 162128 will disable the check for an airspeed sensor.
  * WARNING: ENABLING THIS CIRCUIT BREAKER IS AT OWN RISK
  *
+ * @reboot_required true
  * @min 0
  * @max 162128
+ * @category Developer
  * @group Circuit Breaker
  */
 PARAM_DEFINE_INT32(CBRK_AIRSPD_CHK, 0);
@@ -99,8 +107,10 @@ PARAM_DEFINE_INT32(CBRK_AIRSPD_CHK, 0);
  * --> The IO driver will not do flight termination if requested by the FMU
  * WARNING: ENABLING THIS CIRCUIT BREAKER IS AT OWN RISK
  *
+ * @reboot_required true
  * @min 0
  * @max 121212
+ * @category Developer
  * @group Circuit Breaker
  */
 PARAM_DEFINE_INT32(CBRK_FLIGHTTERM, 121212);
@@ -109,12 +119,14 @@ PARAM_DEFINE_INT32(CBRK_FLIGHTTERM, 121212);
  * Circuit breaker for engine failure detection
  *
  * Setting this parameter to 284953 will disable the engine failure detection.
- * If the aircraft is in engine failure mode the enine failure flag will be
+ * If the aircraft is in engine failure mode the engine failure flag will be
  * set to healthy
  * WARNING: ENABLING THIS CIRCUIT BREAKER IS AT OWN RISK
  *
+ * @reboot_required true
  * @min 0
  * @max 284953
+ * @category Developer
  * @group Circuit Breaker
  */
 PARAM_DEFINE_INT32(CBRK_ENGINEFAIL, 284953);
@@ -129,11 +141,13 @@ PARAM_DEFINE_INT32(CBRK_ENGINEFAIL, 284953);
  *
  * WARNING: ENABLING THIS CIRCUIT BREAKER IS AT OWN RISK
  *
+ * @reboot_required true
  * @min 0
  * @max 240024
+ * @category Developer
  * @group Circuit Breaker
  */
-PARAM_DEFINE_INT32(CBRK_GPSFAIL, 240024);
+PARAM_DEFINE_INT32(CBRK_GPSFAIL, 0);
 
 /**
  * Circuit breaker for disabling buzzer
@@ -142,8 +156,10 @@ PARAM_DEFINE_INT32(CBRK_GPSFAIL, 240024);
  *
  * WARNING: ENABLING THIS CIRCUIT BREAKER IS AT OWN RISK
  *
+ * @reboot_required true
  * @min 0
  * @max 782097
+ * @category Developer
  * @group Circuit Breaker
  */
 PARAM_DEFINE_INT32(CBRK_BUZZER, 0);
@@ -155,8 +171,25 @@ PARAM_DEFINE_INT32(CBRK_BUZZER, 0);
  * checks in the commander.
  * WARNING: ENABLING THIS CIRCUIT BREAKER IS AT OWN RISK
  *
+ * @reboot_required true
  * @min 0
  * @max 197848
+ * @category Developer
  * @group Circuit Breaker
  */
 PARAM_DEFINE_INT32(CBRK_USB_CHK, 0);
+
+/**
+ * Circuit breaker for position error check
+ *
+ * Setting this parameter to 201607 will disable the position and velocity
+ * accuracy checks in the commander.
+ * WARNING: ENABLING THIS CIRCUIT BREAKER IS AT OWN RISK
+ *
+ * @reboot_required true
+ * @min 0
+ * @max 201607
+ * @category Developer
+ * @group Circuit Breaker
+ */
+PARAM_DEFINE_INT32(CBRK_VELPOSERR, 0);

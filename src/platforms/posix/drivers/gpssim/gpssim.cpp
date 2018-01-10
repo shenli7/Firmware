@@ -37,7 +37,8 @@
  */
 
 #include <sys/types.h>
-#define __STDC_FORMAT_MACROS
+#include <px4_defines.h>
+#include <px4_getopt.h>
 #include <inttypes.h>
 #include <stdio.h>
 #include <stdbool.h>
@@ -48,13 +49,14 @@
 #include <poll.h>
 #include <errno.h>
 #include <stdio.h>
+#include <random>
 #include <math.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <px4_config.h>
+#include <px4_tasks.h>
 #include <drivers/drv_hrt.h>
 #include <drivers/device/device.h>
-#include <systemlib/systemlib.h>
 #include <drivers/drv_gps.h>
 #include <uORB/uORB.h>
 #include <uORB/topics/vehicle_gps_position.h>
@@ -70,14 +72,8 @@ using namespace DriverFramework;
 #define GPS_DRIVER_MODE_UBX_SIM
 #define GPSSIM_DEVICE_PATH "/dev/gpssim"
 
-#define TIMEOUT_5HZ 500
+#define TIMEOUT_100MS 100000
 #define RATE_MEASUREMENT_PERIOD 5000000
-
-/* oddly, ERROR is not defined for c++ */
-#ifdef ERROR
-# undef ERROR
-#endif
-static const int ERROR = -1;
 
 /* class for dynamic allocation of satellite info data */
 class GPS_Sat_Info
@@ -90,12 +86,15 @@ public:
 class GPSSIM : public VirtDevObj
 {
 public:
-	GPSSIM(const char *uart_path, bool fake_gps, bool enable_sat_info);
+	GPSSIM(const char *uart_path, bool fake_gps, bool enable_sat_info,
+	       int fix_type, int num_sat, int noise_multiplier);
 	virtual ~GPSSIM();
 
 	virtual int			init();
 
 	virtual int			devIOCTL(unsigned long cmd, unsigned long arg);
+
+	void set(int fix_type, int num_sat, int noise_multiplier);
 
 	/**
 	 * Diagnostics - print some basic information about the driver.
@@ -122,8 +121,12 @@ private:
 	struct satellite_info_s		*_p_report_sat_info;				///< pointer to uORB topic for satellite info
 	orb_advert_t			_report_sat_info_pub;				///< uORB pub for satellite info
 	float				_rate;						///< position update rate
-	bool				_fake_gps;					///< fake gps output
 	SyncObj				_sync;
+	int _fix_type;
+	int _num_sat;
+	int _noise_multiplier;
+
+	std::default_random_engine _gen;
 
 	/**
 	 * Try to configure the GPS, handle outgoing communication to the GPS
@@ -139,7 +142,7 @@ private:
 	/**
 	 * Worker task: main GPS thread that configures the GPS and parses incoming data, always running
 	 */
-	void				task_main(void);
+	void				task_main();
 
 	/**
 	 * Set the baudrate of the UART to the GPS
@@ -168,7 +171,8 @@ GPSSIM	*g_dev = nullptr;
 }
 
 
-GPSSIM::GPSSIM(const char *uart_path, bool fake_gps, bool enable_sat_info) :
+GPSSIM::GPSSIM(const char *uart_path, bool fake_gps, bool enable_sat_info,
+	       int fix_type, int num_sat, int noise_multiplier) :
 	VirtDevObj("gps", GPSSIM_DEVICE_PATH, nullptr, 1e6 / 10),
 	_task_should_exit(false),
 	//_healthy(false),
@@ -180,7 +184,9 @@ GPSSIM::GPSSIM(const char *uart_path, bool fake_gps, bool enable_sat_info) :
 	_p_report_sat_info(nullptr),
 	_report_sat_info_pub(nullptr),
 	_rate(0.0f),
-	_fake_gps(fake_gps)
+	_fix_type(fix_type),
+	_num_sat(num_sat),
+	_noise_multiplier(noise_multiplier)
 {
 	// /* store port name */
 	// strncpy(_port, uart_path, sizeof(_port));
@@ -193,7 +199,7 @@ GPSSIM::GPSSIM(const char *uart_path, bool fake_gps, bool enable_sat_info) :
 
 	/* create satellite info data object if requested */
 	if (enable_sat_info) {
-		_Sat_Info = new(GPS_Sat_Info);
+		_Sat_Info = new (GPS_Sat_Info);
 		_p_report_sat_info = &_Sat_Info->_data;
 		memset(_p_report_sat_info, 0, sizeof(*_p_report_sat_info));
 	}
@@ -201,6 +207,8 @@ GPSSIM::GPSSIM(const char *uart_path, bool fake_gps, bool enable_sat_info) :
 
 GPSSIM::~GPSSIM()
 {
+	delete _Sat_Info;
+
 	/* tell the task we want it to go away */
 	_task_should_exit = true;
 
@@ -221,7 +229,7 @@ GPSSIM::~GPSSIM()
 int
 GPSSIM::init()
 {
-	int ret = ERROR;
+	int ret = PX4_ERROR;
 
 	/* do regular cdev init */
 	if (VirtDevObj::init() != OK) {
@@ -278,105 +286,71 @@ GPSSIM::receive(int timeout)
 	simulator::RawGPSData gps;
 	sim->getGPSSample((uint8_t *)&gps, sizeof(gps));
 
-	_report_gps_pos.timestamp_position = hrt_absolute_time();
-	_report_gps_pos.lat = gps.lat;
-	_report_gps_pos.lon = gps.lon;
-	_report_gps_pos.alt = gps.alt;
-	_report_gps_pos.timestamp_variance = hrt_absolute_time();
-	_report_gps_pos.eph = (float)gps.eph * 1e-2f;
-	_report_gps_pos.epv = (float)gps.epv * 1e-2f;
-	_report_gps_pos.vel_m_s = (float)(gps.vel) / 100.0f;
-	_report_gps_pos.vel_n_m_s = (float)(gps.vn) / 100.0f;
-	_report_gps_pos.vel_e_m_s = (float)(gps.ve) / 100.0f;
-	_report_gps_pos.vel_d_m_s = (float)(gps.vd) / 100.0f;
-	_report_gps_pos.cog_rad = (float)(gps.cog) * 3.1415f / (100.0f * 180.0f);
-	_report_gps_pos.fix_type = gps.fix_type;
-	_report_gps_pos.satellites_used = gps.satellites_visible;
+	static int64_t timestamp_last = 0;
 
-	usleep(200000);
-	return 1;
+	if (gps.timestamp != timestamp_last) {
+		_report_gps_pos.timestamp = hrt_absolute_time();
+		_report_gps_pos.lat = gps.lat;
+		_report_gps_pos.lon = gps.lon;
+		_report_gps_pos.alt = gps.alt;
+		_report_gps_pos.eph = (float)gps.eph * 1e-2f;
+		_report_gps_pos.epv = (float)gps.epv * 1e-2f;
+		_report_gps_pos.vel_m_s = (float)(gps.vel) / 100.0f;
+		_report_gps_pos.vel_n_m_s = (float)(gps.vn) / 100.0f;
+		_report_gps_pos.vel_e_m_s = (float)(gps.ve) / 100.0f;
+		_report_gps_pos.vel_d_m_s = (float)(gps.vd) / 100.0f;
+		_report_gps_pos.cog_rad = (float)(gps.cog) * 3.1415f / (100.0f * 180.0f);
+		_report_gps_pos.fix_type = gps.fix_type;
+		_report_gps_pos.satellites_used = gps.satellites_visible;
+
+		timestamp_last = gps.timestamp;
+
+		// check for data set by the user
+		_report_gps_pos.fix_type = (_fix_type < 0) ? _report_gps_pos.fix_type : _fix_type;
+		_report_gps_pos.satellites_used = (_num_sat < 0) ? _report_gps_pos.satellites_used : _num_sat;
+		// use normal distribution for noise
+		std::normal_distribution<float> normal_distribution(0.0f, 1.0f);
+		_report_gps_pos.lat += (int32_t)(_noise_multiplier * normal_distribution(_gen));
+		_report_gps_pos.lon += (int32_t)(_noise_multiplier * normal_distribution(_gen));
+
+		return 1;
+
+	} else {
+
+		usleep(timeout);
+		return 0;
+	}
 }
 
 void
 GPSSIM::task_main()
 {
-
 	/* loop handling received serial bytes and also configuring in between */
 	while (!_task_should_exit) {
 
-		if (_fake_gps) {
-			_report_gps_pos.timestamp_position = hrt_absolute_time();
-			_report_gps_pos.lat = (int32_t)47.378301e7f;
-			_report_gps_pos.lon = (int32_t)8.538777e7f;
-			_report_gps_pos.alt = (int32_t)1200e3f;
-			_report_gps_pos.timestamp_variance = hrt_absolute_time();
-			_report_gps_pos.s_variance_m_s = 10.0f;
-			_report_gps_pos.c_variance_rad = 0.1f;
-			_report_gps_pos.fix_type = 3;
-			_report_gps_pos.eph = 0.9f;
-			_report_gps_pos.epv = 1.8f;
-			_report_gps_pos.timestamp_velocity = hrt_absolute_time();
-			_report_gps_pos.vel_n_m_s = 0.0f;
-			_report_gps_pos.vel_e_m_s = 0.0f;
-			_report_gps_pos.vel_d_m_s = 0.0f;
-			_report_gps_pos.vel_m_s = sqrtf(_report_gps_pos.vel_n_m_s * _report_gps_pos.vel_n_m_s + _report_gps_pos.vel_e_m_s *
-							_report_gps_pos.vel_e_m_s + _report_gps_pos.vel_d_m_s * _report_gps_pos.vel_d_m_s);
-			_report_gps_pos.cog_rad = 0.0f;
-			_report_gps_pos.vel_ned_valid = true;
+		// GPS is obviously detected successfully, reset statistics
+		//_Helper->reset_update_rates();
 
-			//no time and satellite information simulated
+		int recv_ret = receive(TIMEOUT_100MS);
 
-			if (!(m_pub_blocked)) {
-				if (_report_gps_pos_pub != nullptr) {
-					orb_publish(ORB_ID(vehicle_gps_position), _report_gps_pos_pub, &_report_gps_pos);
+		if (recv_ret > 0) {
+
+			/* opportunistic publishing - else invalid data would end up on the bus */
+			if (_report_gps_pos_pub != nullptr) {
+				orb_publish(ORB_ID(vehicle_gps_position), _report_gps_pos_pub, &_report_gps_pos);
+
+			} else {
+				_report_gps_pos_pub = orb_advertise(ORB_ID(vehicle_gps_position), &_report_gps_pos);
+			}
+
+			if (_p_report_sat_info) {
+				if (_report_sat_info_pub != nullptr) {
+					orb_publish(ORB_ID(satellite_info), _report_sat_info_pub, _p_report_sat_info);
 
 				} else {
-					_report_gps_pos_pub = orb_advertise(ORB_ID(vehicle_gps_position), &_report_gps_pos);
+					_report_sat_info_pub = orb_advertise(ORB_ID(satellite_info), _p_report_sat_info);
 				}
 			}
-
-			usleep(2e5);
-
-		} else {
-			//Publish initial report that we have access to a GPS
-			//Make sure to clear any stale data in case driver is reset
-			memset(&_report_gps_pos, 0, sizeof(_report_gps_pos));
-			_report_gps_pos.timestamp_position = hrt_absolute_time();
-			_report_gps_pos.timestamp_variance = hrt_absolute_time();
-			_report_gps_pos.timestamp_velocity = hrt_absolute_time();
-			_report_gps_pos.timestamp_time = hrt_absolute_time();
-
-			if (!(m_pub_blocked)) {
-				if (_report_gps_pos_pub != nullptr) {
-					orb_publish(ORB_ID(vehicle_gps_position), _report_gps_pos_pub, &_report_gps_pos);
-
-				} else {
-					_report_gps_pos_pub = orb_advertise(ORB_ID(vehicle_gps_position), &_report_gps_pos);
-				}
-			}
-
-			// GPS is obviously detected successfully, reset statistics
-			//_Helper->reset_update_rates();
-
-			while ((receive(TIMEOUT_5HZ)) > 0 && !_task_should_exit) {
-				/* opportunistic publishing - else invalid data would end up on the bus */
-
-				if (!(m_pub_blocked)) {
-					orb_publish(ORB_ID(vehicle_gps_position), _report_gps_pos_pub, &_report_gps_pos);
-
-					if (_p_report_sat_info) {
-						if (_report_sat_info_pub != nullptr) {
-							orb_publish(ORB_ID(satellite_info), _report_sat_info_pub, _p_report_sat_info);
-
-						} else {
-							_report_sat_info_pub = orb_advertise(ORB_ID(satellite_info), _p_report_sat_info);
-						}
-					}
-				}
-			}
-
-			// FIXME - if ioctl is called then it will deadlock
-			_sync.lock();
 		}
 	}
 
@@ -384,7 +358,6 @@ GPSSIM::task_main()
 
 	/* tell the dtor that we are exiting */
 	_task = -1;
-	return;
 }
 
 
@@ -398,13 +371,7 @@ void
 GPSSIM::print_info()
 {
 	//GPS Mode
-	if (_fake_gps) {
-		PX4_INFO("protocol: faked");
-	}
-
-	else {
-		PX4_INFO("protocol: SIM");
-	}
+	PX4_INFO("protocol: SIM");
 
 	PX4_INFO("port: %s, baudrate: %d, status: %s", _port, _baudrate, (_healthy) ? "OK" : "NOT OK");
 	PX4_INFO("sat info: %s, noise: %d, jamming detected: %s",
@@ -412,9 +379,9 @@ GPSSIM::print_info()
 		 _report_gps_pos.noise_per_ms,
 		 _report_gps_pos.jamming_indicator == 255 ? "YES" : "NO");
 
-	if (_report_gps_pos.timestamp_position != 0) {
+	if (_report_gps_pos.timestamp != 0) {
 		PX4_INFO("position lock: %dD, satellites: %d, last update: %8.4fms ago", (int)_report_gps_pos.fix_type,
-			 _report_gps_pos.satellites_used, (double)(hrt_absolute_time() - _report_gps_pos.timestamp_position) / 1000.0);
+			 _report_gps_pos.satellites_used, (double)(hrt_absolute_time() - _report_gps_pos.timestamp) / 1000.0);
 		PX4_INFO("lat: %d, lon: %d, alt: %d", _report_gps_pos.lat, _report_gps_pos.lon, _report_gps_pos.alt);
 		PX4_INFO("vel: %.2fm/s, %.2fm/s, %.2fm/s", (double)_report_gps_pos.vel_n_m_s,
 			 (double)_report_gps_pos.vel_e_m_s, (double)_report_gps_pos.vel_d_m_s);
@@ -428,6 +395,15 @@ GPSSIM::print_info()
 	usleep(100000);
 }
 
+void
+GPSSIM::set(int fix_type, int num_sat, int noise_multiplier)
+{
+	_fix_type = fix_type;
+	_num_sat = num_sat;
+	_noise_multiplier = noise_multiplier;
+	PX4_INFO("Parameters set");
+}
+
 /**
  * Local functions in support of the shell command.
  */
@@ -436,22 +412,24 @@ namespace gpssim
 
 GPSSIM	*g_dev = nullptr;
 
-void	start(const char *uart_path, bool fake_gps, bool enable_sat_info);
+void	start(const char *uart_path, bool fake_gps, bool enable_sat_info,
+	      int fix_type, int num_sat, int noise_multiplier);
 void	stop();
 void	test();
 void	reset();
 void	info();
+void	usage(const char *reason);
 
 /**
  * Start the driver.
  */
 void
-start(const char *uart_path, bool fake_gps, bool enable_sat_info)
+start(const char *uart_path, bool fake_gps, bool enable_sat_info, int fix_type, int num_sat, int noise_multiplier)
 {
 	DevHandle h;
 
 	/* create the driver */
-	g_dev = new GPSSIM(uart_path, fake_gps, enable_sat_info);
+	g_dev = new GPSSIM(uart_path, fake_gps, enable_sat_info, fix_type, num_sat, noise_multiplier);
 
 	if (g_dev == nullptr) {
 		goto fail;
@@ -465,7 +443,7 @@ start(const char *uart_path, bool fake_gps, bool enable_sat_info)
 	DevMgr::getHandle(GPSSIM_DEVICE_PATH, h);
 
 	if (!h.isValid()) {
-		PX4_ERR("getHandle failed: %s", GPS0_DEVICE_PATH);
+		PX4_ERR("getHandle failed: %s", GPSSIM_DEVICE_PATH);
 		goto fail;
 	}
 
@@ -528,87 +506,137 @@ info()
 {
 	if (g_dev == nullptr) {
 		PX4_ERR("gpssim not running");
+		return;
 	}
 
 	g_dev->print_info();
 }
 
+void
+usage(const char *reason)
+{
+	if (reason) {
+		PX4_WARN("%s", reason);
+	}
+
+	PX4_INFO("usage:");
+	PX4_INFO("gpssim {start|stop|test|reset|status|set}");
+	PX4_INFO("       [-d /dev/ttyS0-n][-f (for enabling fake)][-s (to enable sat info)]");
+	PX4_INFO("       [-t # (for setting fix_type)][-n # (for setting # satellites)][-m # (for setting noise multiplier [scalar] for normal distribution)]");
+}
+
 } // namespace
+
 
 
 int
 gpssim_main(int argc, char *argv[])
 {
-
-	/* set to default */
+	// set to default
 	const char *device_name = GPS_DEFAULT_UART_PORT;
 	bool fake_gps = false;
 	bool enable_sat_info = false;
+	int fix_type = -1;
+	int num_sat = -1;
+	int noise_multiplier = 0;
+
+	// check for optional arguments
+	int ch;
+	int myoptind = 1;
+	const char *myoptarg = nullptr;
+
+	while ((ch = px4_getopt(argc, argv, "d:fst:n:m:", &myoptind, &myoptarg)) != EOF) {
+		switch (ch) {
+		case 'd':
+			device_name = myoptarg;
+			PX4_INFO("Using device %s", device_name);
+			break;
+
+		case 'f':
+			fake_gps = true;
+			PX4_INFO("Using fake GPS");
+			break;
+
+		case 's':
+			enable_sat_info = true;
+			PX4_INFO("Satellite info enabled");
+			break;
+
+		case 't':
+			fix_type = atoi(myoptarg);
+			PX4_INFO("Setting fix_type to %d", fix_type);
+			break;
+
+		case 'n':
+			num_sat = atoi(myoptarg);
+			PX4_INFO("Setting number of satellites to %d", num_sat);
+			break;
+
+		case 'm':
+			noise_multiplier = atoi(myoptarg);
+			PX4_INFO("Setting noise multiplier to %d", noise_multiplier);
+			break;
+
+		default:
+			PX4_WARN("Unknown option!");
+		}
+	}
+
+	if (myoptind >= argc) {
+		gpssim::usage("not enough arguments supplied");
+		return 1;
+	}
 
 	/*
 	 * Start/load the driver.
 	 */
-	if (!strcmp(argv[1], "start")) {
+	if (!strcmp(argv[myoptind], "start")) {
 		if (g_dev != nullptr) {
-			PX4_WARN("gpssim already started");
+			PX4_WARN("already started");
 			return 0;
 		}
 
-		/* work around getopt unreliability */
-		if (argc > 3) {
-			if (!strcmp(argv[2], "-d")) {
-				device_name = argv[3];
-
-			} else {
-				goto out;
-			}
-		}
-
-		/* Detect fake gps option */
-		for (int i = 2; i < argc; i++) {
-			if (!strcmp(argv[i], "-f")) {
-				fake_gps = true;
-			}
-		}
-
-		/* Detect sat info option */
-		for (int i = 2; i < argc; i++) {
-			if (!strcmp(argv[i], "-s")) {
-				enable_sat_info = true;
-			}
-		}
-
-		gpssim::start(device_name, fake_gps, enable_sat_info);
+		gpssim::start(device_name, fake_gps, enable_sat_info, fix_type, num_sat, noise_multiplier);
+		return 0;
 	}
 
-	if (!strcmp(argv[1], "stop")) {
+	/* The following need gpssim running. */
+	if (g_dev == nullptr) {
+		PX4_WARN("not running");
+		return 1;
+	}
+
+	if (!strcmp(argv[myoptind], "stop")) {
 		gpssim::stop();
 	}
 
 	/*
 	 * Test the driver/device.
 	 */
-	if (!strcmp(argv[1], "test")) {
+	if (!strcmp(argv[myoptind], "test")) {
 		gpssim::test();
 	}
 
 	/*
 	 * Reset the driver.
 	 */
-	if (!strcmp(argv[1], "reset")) {
+	if (!strcmp(argv[myoptind], "reset")) {
 		gpssim::reset();
 	}
 
 	/*
 	 * Print driver status.
 	 */
-	if (!strcmp(argv[1], "status")) {
+	if (!strcmp(argv[myoptind], "status")) {
 		gpssim::info();
 	}
 
-	return 0;
+	/*
+	 * Set parameters
+	 */
+	if (!strcmp(argv[myoptind], "set")) {
+		g_dev->set(fix_type, num_sat, noise_multiplier);
+	}
 
-out:
-	PX4_INFO("unrecognized command, try 'start', 'stop', 'test', 'reset' or 'status'\n [-d /dev/ttyS0-n][-f (for enabling fake)][-s (to enable sat info)]");
-	return 1;
+	return 0;
 }

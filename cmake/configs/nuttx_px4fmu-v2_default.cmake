@@ -1,95 +1,128 @@
-include(nuttx/px4_impl_nuttx)
+px4_nuttx_configure(HWCLASS m4 CONFIG nsh ROMFS y ROMFSROOT px4fmu_common IO px4io-v2)
 
-set(CMAKE_TOOLCHAIN_FILE ${CMAKE_SOURCE_DIR}/cmake/toolchains/Toolchain-arm-none-eabi.cmake)
-
-set(config_uavcan_num_ifaces 2)
+#set(config_uavcan_num_ifaces 2)
 
 set(config_module_list
 	#
 	# Board support modules
 	#
+	#drivers/adis16448
+	drivers/airspeed
+	#drivers/blinkm
+	#drivers/bmi160
+	#drivers/bmp280
+	drivers/boards
+	#drivers/bst
+	drivers/camera_trigger
 	drivers/device
+	#drivers/ets_airspeed
+	drivers/frsky_telemetry
+	drivers/gps
+	drivers/hmc5883
+	#drivers/hott
+	#drivers/hott/hott_sensors
+	#drivers/hott/hott_telemetry
+	#drivers/iridiumsbd
+	#drivers/irlock
+	#drivers/ist8310
+	drivers/l3gd20
+	drivers/led
+	drivers/lis3mdl
+	drivers/ll40ls
+	drivers/lsm303d
+	#drivers/mb12xx
+	#drivers/mkblctrl
+	drivers/mpu6000
+	drivers/mpu9250
+	drivers/ms4525_airspeed
+	drivers/ms5525_airspeed
+	drivers/ms5611
+	#drivers/oreoled
+	#drivers/protocol_splitter
+	drivers/pwm_input
+	drivers/pwm_out_sim
+	drivers/px4flow
+	drivers/px4fmu
+	drivers/px4io
+	drivers/rgbled
+	drivers/sdp3x_airspeed
+	drivers/sf0x
+	drivers/sf1xx
+	#drivers/srf02
 	drivers/stm32
 	drivers/stm32/adc
 	drivers/stm32/tone_alarm
-	drivers/led
-	drivers/px4fmu
-	drivers/px4io
-	drivers/boards/px4fmu-v2
-	drivers/rgbled
-	drivers/mpu6000
-	drivers/mpu9250
-	drivers/lsm303d
-	drivers/l3gd20
-	drivers/hmc5883
-	drivers/ms5611
-	#drivers/mb12xx
-	drivers/srf02
-	drivers/sf0x
-	drivers/ll40ls
-	drivers/trone
-	drivers/gps
-	drivers/pwm_out_sim
-	#drivers/hott
-	#drivers/hott/hott_telemetry
-	#drivers/hott/hott_sensors
-	drivers/blinkm
-	drivers/airspeed
-	drivers/ets_airspeed
-	drivers/meas_airspeed
-	drivers/frsky_telemetry
+	#drivers/tap_esc
+	drivers/teraranger
+	#drivers/ulanding
+	drivers/vmount
 	modules/sensors
-	#drivers/mkblctrl
-	drivers/px4flow
-	drivers/oreoled
-	drivers/gimbal
-	drivers/pwm_input
-	drivers/camera_trigger
-	drivers/bst
+	#drivers/tfmini
 
 	#
 	# System commands
 	#
 	systemcmds/bl_update
+	#systemcmds/config
+	#systemcmds/dumpfile
+	#systemcmds/esc_calib
+	systemcmds/hardfault_log
+	#systemcmds/led_control
 	systemcmds/mixer
+	#systemcmds/motor_ramp
+	#systemcmds/motor_test
+	systemcmds/mtd
+	#systemcmds/nshterm
 	systemcmds/param
 	systemcmds/perf
 	systemcmds/pwm
-	systemcmds/esc_calib
 	systemcmds/reboot
-	#systemcmds/topic_listener
+	#systemcmds/sd_bench
 	systemcmds/top
-	systemcmds/config
-	systemcmds/nshterm
-	systemcmds/mtd
-	systemcmds/dumpfile
+	#systemcmds/topic_listener
 	systemcmds/ver
+
+	#
+	# Testing
+	#
+	#drivers/sf0x/sf0x_tests
+	#drivers/test_ppm
+	#lib/controllib/controllib_test
+	#lib/rc/rc_tests
+	#modules/commander/commander_tests
+	#modules/mavlink/mavlink_tests
+	#modules/mc_pos_control/mc_pos_control_tests
+	#modules/uORB/uORB_tests
+	#systemcmds/tests
 
 	#
 	# General system control
 	#
+	modules/camera_feedback
 	modules/commander
-	modules/navigator
-	modules/mavlink
-	modules/gpio_led
-	modules/uavcan
+	modules/events
+	#modules/gpio_led
 	modules/land_detector
+	modules/load_mon
+	modules/mavlink
+	modules/navigator
+	#modules/uavcan
 
 	#
-	# Estimation modules (EKF/ SO3 / other filters)
+	# Estimation modules
 	#
-	# Too high RAM usage due to static allocations
-	# modules/attitude_estimator_ekf
-	modules/attitude_estimator_q
-	modules/ekf_att_pos_estimator
-	modules/position_estimator_inav
+	#modules/attitude_estimator_q
+	modules/ekf2
+	#modules/local_position_estimator
+	#modules/position_estimator_inav
 
 	#
 	# Vehicle Control
 	#
-	# modules/segway # XXX Needs GCC 4.7 fix
-	modules/fw_pos_control_l1
 	modules/fw_att_control
+	modules/fw_pos_control_l1
+	modules/gnd_att_control
+	modules/gnd_pos_control
 	modules/mc_att_control
 	modules/mc_pos_control
 	modules/vtol_att_control
@@ -97,53 +130,62 @@ set(config_module_list
 	#
 	# Logging
 	#
-	modules/sdlog2
+	modules/logger
+	#modules/sdlog2
 
 	#
 	# Library modules
 	#
-	modules/param
-	modules/systemlib
-	modules/systemlib/mixer
-	modules/controllib
-	modules/uORB
 	modules/dataman
+	modules/systemlib
+	modules/systemlib/param
+	modules/uORB
 
 	#
 	# Libraries
 	#
-	#lib/mathlib/CMSIS
-	lib/mathlib
-	lib/mathlib/math/filter
+	lib/controllib
+	lib/conversion
+	lib/DriverFramework/framework
 	lib/ecl
-	lib/external_lgpl
 	lib/geo
 	lib/geo_lookup
-	lib/conversion
 	lib/launchdetection
-	lib/terrain_estimation
+	lib/led
+	lib/mathlib
+	lib/mathlib/math/filter
+	lib/mixer
 	lib/runway_takeoff
 	lib/tailsitter_recovery
-	platforms/nuttx
+	#lib/terrain_estimation
+	lib/version
 
-	# had to add for cmake, not sure why wasn't in original config
-	platforms/common 
+	#
+	# Platform
+	#
+	platforms/common
+	platforms/nuttx
 	platforms/nuttx/px4_layer
 
 	#
 	# OBC challenge
 	#
-	#modules/bottle_drop
+	#examples/bottle_drop
 
 	#
 	# Rover apps
 	#
-	examples/rover_steering_control
+	#examples/rover_steering_control
+
+	#
+	# Segway
+	#
+	#examples/segway
 
 	#
 	# Demo apps
 	#
-	#examples/math_demo
+
 	# Tutorial code from
 	# https://px4.io/dev/px4_simple_app
 	#examples/px4_simple_app
@@ -163,30 +205,3 @@ set(config_module_list
 	# Hardware test
 	#examples/hwtest
 )
-
-set(config_extra_builtin_cmds
-	serdis
-	sercon
-	)
-
-set(config_io_board
-	px4io-v2
-	)
-
-set(config_extra_libs
-	${CMAKE_SOURCE_DIR}/src/lib/mathlib/CMSIS/libarm_cortexM4lf_math.a
-	uavcan
-	uavcan_stm32_driver
-	)
-
-set(config_io_extra_libs
-	#${CMAKE_SOURCE_DIR}/src/lib/mathlib/CMSIS/libarm_cortexM3l_math.a
-	)
-
-add_custom_target(sercon)
-set_target_properties(sercon PROPERTIES
-	MAIN "sercon" STACK "2048")
-
-add_custom_target(serdis)
-set_target_properties(serdis PROPERTIES
-	MAIN "serdis" STACK "2048")

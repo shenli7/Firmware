@@ -39,6 +39,9 @@
  */
 
 #include <px4_config.h>
+#include <px4_getopt.h>
+#include <px4_log.h>
+#include <px4_module.h>
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -51,7 +54,6 @@
 
 
 #include "systemlib/systemlib.h"
-#include "systemlib/err.h"
 
 
 __EXPORT int motor_test_main(int argc, char *argv[]);
@@ -59,7 +61,7 @@ __EXPORT int motor_test_main(int argc, char *argv[]);
 static void motor_test(unsigned channel, float value);
 static void usage(const char *reason);
 
-static orb_advert_t _test_motor_pub = nullptr;
+static orb_advert_t _test_motor_pub = NULL;
 
 void motor_test(unsigned channel, float value)
 {
@@ -69,54 +71,63 @@ void motor_test(unsigned channel, float value)
 	_test_motor.timestamp = hrt_absolute_time();
 	_test_motor.value = value;
 
-	if (_test_motor_pub != nullptr) {
+	if (_test_motor_pub != NULL) {
 		/* publish test state */
 		orb_publish(ORB_ID(test_motor), _test_motor_pub, &_test_motor);
 
 	} else {
 		/* advertise and publish */
-		_test_motor_pub = orb_advertise(ORB_ID(test_motor), &_test_motor);
+		_test_motor_pub = orb_advertise_queue(ORB_ID(test_motor), &_test_motor, 4);
 	}
+
+	printf("motor %d set to %.2f\n", channel, (double)value);
 }
 
 static void usage(const char *reason)
 {
 	if (reason != NULL) {
-		warnx("%s", reason);
+		PX4_WARN("%s", reason);
 	}
 
-	errx(1,
-	     "usage:\n"
-	     "motor_test\n"
-	     "    -m <channel>            Motor to test (0..7)\n"
-	     "    -p <power>              Power (0..100)\n");
+	PRINT_MODULE_DESCRIPTION("Utility to test motors.\n"
+				 "\n"
+				 "Note: this can only be used for drivers which support the motor_test uorb topic (currently uavcan and tap_esc)\n"
+				);
+
+	PRINT_MODULE_USAGE_NAME("motor_test", "command");
+	PRINT_MODULE_USAGE_COMMAND_DESCR("test", "Set motor(s) to a specific output value");
+	PRINT_MODULE_USAGE_PARAM_INT('m', -1, 0, 7, "Motor to test (0...7, all if not specified)", true);
+	PRINT_MODULE_USAGE_PARAM_INT('p', 0, 0, 100, "Power (0...100)", true);
+	PRINT_MODULE_USAGE_COMMAND_DESCR("stop", "Stop all motors");
+	PRINT_MODULE_USAGE_COMMAND_DESCR("iterate", "Iterate all motors starting and stopping one after the other");
+
 }
 
 int motor_test_main(int argc, char *argv[])
 {
-	unsigned long channel = 0;
+	int channel = -1; //default to all channels
 	unsigned long lval;
 	float value = 0.0f;
 	int ch;
 
-	if (argc != 5) {
-		usage("please specify motor and power");
-	}
+	int myoptind = 1;
+	const char *myoptarg = NULL;
 
-	while ((ch = getopt(argc, argv, "m:p:")) != EOF) {
+	while ((ch = px4_getopt(argc, argv, "m:p:", &myoptind, &myoptarg)) != EOF) {
 		switch (ch) {
 
 		case 'm':
 			/* Read in motor number */
-			channel = strtoul(optarg, NULL, 0);
+			channel = (int)strtol(myoptarg, NULL, 0);
 			break;
 
 		case 'p':
 			/* Read in power value */
-			lval = strtoul(optarg, NULL, 0);
+			lval = strtoul(myoptarg, NULL, 0);
 
 			if (lval > 100) {
 				usage("value invalid");
+				return 1;
 			}
 
 			value = ((float)lval) / 100.f;
@@ -124,12 +135,52 @@ int motor_test_main(int argc, char *argv[])
 
 		default:
 			usage(NULL);
+			return 1;
 		}
 	}
 
-	motor_test(channel, value);
+	bool run_test = true;
 
-	printf("motor %d set to %.2f\n", channel, (double)value);
+	if (myoptind >= 0 && myoptind < argc) {
+		if (strcmp("stop", argv[myoptind]) == 0) {
+			channel = -1;
+			value = 0.f;
 
-	exit(0);
+		} else if (strcmp("iterate", argv[myoptind]) == 0) {
+			value = 0.3f;
+
+			for (int i = 0; i < 8; ++i) {
+				motor_test(i, value);
+				usleep(500000);
+				motor_test(i, 0.f);
+				usleep(10000);
+			}
+
+			run_test = false;
+
+		} else if (strcmp("test", argv[myoptind]) == 0) {
+			// nothing to do
+		} else {
+			usage(NULL);
+			return 0;
+		}
+
+	} else {
+		usage(NULL);
+		return 0;
+	}
+
+	if (run_test) {
+		if (channel < 0) {
+			for (int i = 0; i < 8; ++i) {
+				motor_test(i, value);
+				usleep(10000);
+			}
+
+		} else {
+			motor_test(channel, value);
+		}
+	}
+
+	return 0;
 }

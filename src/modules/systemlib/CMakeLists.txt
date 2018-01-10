@@ -31,42 +31,39 @@
 #
 ############################################################################
 
-# for generated files
-include_directories(${CMAKE_BINARY_DIR}/src/modules/param)
-
 set(SRCS
-	perf_counter.c
-	conversions.c
-	cpuload.c
-	pid/pid.c
 	airspeed.c
-	mavlink_log.c
-	rc_check.c
-	otp.c
+	battery.cpp
 	board_serial.c
-	pwm_limit/pwm_limit.c
-	mcu_version.c
 	bson/tinybson.c
 	circuit_breaker.cpp
+	conversions.c
+	cpuload.c
+	crc.c
+	hysteresis/hysteresis.cpp
+	mavlink_log.c
+	otp.c
+	perf_counter.c
+	pid/pid.c
+	pwm_limit/pwm_limit.c
+	rc_check.c
 	)
 
 if(${OS} STREQUAL "nuttx")
 	list(APPEND SRCS
 		err.c
 		printload.c
-		param/param.c
-		up_cxxinitialize.c 
+		flashparams/flashparams.c
+		flashparams/flashfs.c
 		)
 elseif ("${CONFIG_SHMEM}" STREQUAL "1")
 	list(APPEND SRCS
-		param/param_shmem.c
 		print_load_posix.c
 		)
 else()
 	list(APPEND SRCS
-		param/param.c
 		print_load_posix.c
-		)	
+		)
 endif()
 
 if(NOT ${OS} STREQUAL "qurt")
@@ -79,10 +76,8 @@ px4_add_module(
 	MODULE modules__systemlib
 	COMPILE_FLAGS
 		-Wno-sign-compare
-		-Os
 	SRCS ${SRCS}
 	DEPENDS
 		platforms__common
-		modules__param
 	)
-# vim: set noet ft=cmake fenc=utf-8 ff=unix : 
+# vim: set noet ft=cmake fenc=utf-8 ff=unix :

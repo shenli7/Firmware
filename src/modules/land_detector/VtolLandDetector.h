@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- *   Copyright (c) 2013-2015 PX4 Development Team. All rights reserved.
+ *   Copyright (c) 2013-2016 PX4 Development Team. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -33,62 +33,52 @@
 
 /**
  * @file VtolLandDetector.h
- * Land detection algorithm for vtol
+ * Land detection implementation for VTOL also called hybrids.
  *
  * @author Roman Bapst <bapstr@gmail.com>
+ * @author Julian Oes <julian@oes.ch>
  */
 
-#ifndef __VTOL_LAND_DETECTOR_H__
-#define __VTOL_LAND_DETECTOR_H__
+#pragma once
+
+#include <uORB/topics/airspeed.h>
+#include <uORB/topics/vehicle_status.h>
 
 #include "MulticopterLandDetector.h"
-#include <uORB/topics/airspeed.h>
+
+namespace land_detector
+{
 
 class VtolLandDetector : public MulticopterLandDetector
 {
 public:
 	VtolLandDetector();
 
+protected:
+	void _initialize_topics() override;
+	void _update_params() override;
+	void _update_topics() override;
+	bool _get_landed_state() override;
+	bool _get_maybe_landed_state() override;
 
 private:
-	/**
-	* @brief  polls all subscriptions and pulls any data that has changed
-	**/
-	void updateSubscriptions() override;
-
-	/**
-	* @brief Runs one iteration of the land detection algorithm
-	**/
-	bool update() override;
-
-	/**
-	* @brief Initializes the land detection algorithm
-	**/
-	void initialize() override;
-
-	/**
-	* @brief download and update local parameter cache
-	**/
-	void updateParameterCache(const bool force) override;
-
-	/**
-	* @brief Handles for interesting parameters
-	**/
 	struct {
 		param_t maxAirSpeed;
-	}		_paramHandle;
+	} _paramHandle{};
 
 	struct {
 		float maxAirSpeed;
-	} _params;
+	} _params{};
 
-	int _airspeedSub;
-	int _parameterSub;
+	int _airspeedSub{-1};
+	int _vehicle_status_sub{-1};
 
-	struct airspeed_s _airspeed;
+	airspeed_s		_airspeed{};
+	vehicle_status_s	_vehicle_status{};
 
-	bool _was_in_air;								/**< indicates whether the vehicle was in the air in the previous iteration */
-	float _airspeed_filtered;						/**< low pass filtered airspeed */
+	bool _was_in_air{false}; /**< indicates whether the vehicle was in the air in the previous iteration */
+	float _airspeed_filtered{0.0f}; /**< low pass filtered airspeed */
 };
 
-#endif
+
+} // namespace land_detector

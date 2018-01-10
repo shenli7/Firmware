@@ -50,7 +50,7 @@
 
 #include <systemlib/err.h>
 #include <arch/board/board.h>
-#include <mavlink/mavlink_log.h>
+#include <systemlib/mavlink_log.h>
 
 #include <uORB/Publication.hpp>
 #include <uORB/topics/debug_key_value.h>
@@ -80,7 +80,7 @@ enum {
 };
 
 // File descriptors
-static int mavlink_fd;
+static orb_advert_t mavlink_log_pub;
 
 MD25::MD25(const char *deviceName, int bus,
 	   uint16_t address, uint32_t speed) :
@@ -357,7 +357,7 @@ int MD25::probe()
 
 	//printf("searching for MD25 address\n");
 	while (true) {
-		set_address(testAddress);
+		set_device_address(testAddress);
 		ret = readData();
 
 		if (ret == OK && !found) {
@@ -376,11 +376,11 @@ int MD25::probe()
 	}
 
 	if (found) {
-		set_address(goodAddress);
+		set_device_address(goodAddress);
 		return OK;
 
 	} else {
-		set_address(0);
+		set_device_address(0);
 		return ret;
 	}
 }
@@ -395,7 +395,7 @@ int MD25::search()
 
 	//printf("searching for MD25 address\n");
 	while (true) {
-		set_address(testAddress);
+		set_device_address(testAddress);
 		ret = readData();
 
 		if (ret == OK && !found) {
@@ -415,11 +415,11 @@ int MD25::search()
 	}
 
 	if (found) {
-		set_address(goodAddress);
+		set_device_address(goodAddress);
 		return OK;
 
 	} else {
-		set_address(0);
+		set_device_address(0);
 		return ret;
 	}
 }

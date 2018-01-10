@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- *   Copyright (c) 2013-2015 PX4 Development Team. All rights reserved.
+ *   Copyright (c) 2013-2016 PX4 Development Team. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -33,49 +33,59 @@
 
 /**
  * @file VtolLandDetector.cpp
- * Land detection algorithm for vtol
+ * Land detection algorithm for VTOL
  *
  * @author Roman Bapst <bapstroma@gmail.com>
+ * @author Julian Oes <julian@oes.ch>
  */
 
-#include "VtolLandDetector.h"
 #include <drivers/drv_hrt.h>
 
-VtolLandDetector::VtolLandDetector() : MulticopterLandDetector(),
-	_paramHandle(),
-	_params(),
-	_airspeedSub(-1),
-	_parameterSub(-1),
-	_airspeed{},
-	_was_in_air(false),
-	_airspeed_filtered(0)
+#include "VtolLandDetector.h"
+
+namespace land_detector
+{
+
+VtolLandDetector::VtolLandDetector()
 {
 	_paramHandle.maxAirSpeed = param_find("LNDFW_AIRSPD_MAX");
 }
 
-void VtolLandDetector::initialize()
+void VtolLandDetector::_initialize_topics()
 {
-	MulticopterLandDetector::initialize();
+	MulticopterLandDetector::_initialize_topics();
+
 	_airspeedSub = orb_subscribe(ORB_ID(airspeed));
-
-	// download parameters
-	updateParameterCache(true);
+	_vehicle_status_sub = orb_subscribe(ORB_ID(vehicle_status));
 }
 
-void VtolLandDetector::updateSubscriptions()
+void VtolLandDetector::_update_topics()
 {
-	MulticopterLandDetector::updateSubscriptions();
+	MulticopterLandDetector::_update_topics();
 
-	orb_update(ORB_ID(airspeed), _airspeedSub, &_airspeed);
+	_orb_update(ORB_ID(airspeed), _airspeedSub, &_airspeed);
+	_orb_update(ORB_ID(vehicle_status), _vehicle_status_sub, &_vehicle_status);
 }
 
-bool VtolLandDetector::update()
+bool VtolLandDetector::_get_maybe_landed_state()
 {
-	updateSubscriptions();
-	updateParameterCache(false);
+	// Only trigger in RW mode
+	if (!_vehicle_status.is_rotary_wing) {
+		return false;
+	}
+
+	return MulticopterLandDetector::_get_maybe_landed_state();
+}
+
+bool VtolLandDetector::_get_landed_state()
+{
+	// Only trigger in RW mode
+	if (!_vehicle_status.is_rotary_wing) {
+		return false;
+	}
 
 	// this is returned from the mutlicopter land detector
-	bool landed = get_landed_state();
+	bool landed = MulticopterLandDetector::_get_landed_state();
 
 	// for vtol we additionally consider airspeed
 	if (hrt_elapsed_time(&_airspeed.timestamp) < 500 * 1000) {
@@ -97,20 +107,11 @@ bool VtolLandDetector::update()
 	return landed;
 }
 
-void VtolLandDetector::updateParameterCache(const bool force)
+void VtolLandDetector::_update_params()
 {
-	MulticopterLandDetector::updateParameterCache(force);
+	MulticopterLandDetector::_update_params();
 
-	bool updated;
-	parameter_update_s paramUpdate;
-
-	orb_check(_parameterSub, &updated);
-
-	if (updated) {
-		orb_copy(ORB_ID(parameter_update), _parameterSub, &paramUpdate);
-	}
-
-	if (updated || force) {
-		param_get(_paramHandle.maxAirSpeed, &_params.maxAirSpeed);
-	}
+	param_get(_paramHandle.maxAirSpeed, &_params.maxAirSpeed);
 }
+
+} // namespace land_detector

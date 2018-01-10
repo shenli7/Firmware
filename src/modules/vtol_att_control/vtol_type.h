@@ -47,25 +47,28 @@
 #include <drivers/drv_hrt.h>
 
 struct Params {
-	int idle_pwm_mc;			// pwm value for idle in mc mode
-	int vtol_motor_count;		// number of motors
-	int vtol_fw_permanent_stab;	// in fw mode stabilize attitude also in manual mode
-	float mc_airspeed_min;		// min airspeed in multicoper mode (including prop-wash)
-	float mc_airspeed_trim;		// trim airspeed in multicopter mode
-	float mc_airspeed_max;		// max airpseed in multicopter mode
+	int32_t idle_pwm_mc;			// pwm value for idle in mc mode
+	int32_t vtol_motor_count;		// number of motors
 	float fw_pitch_trim;		// trim for neutral elevon position in fw mode
-	float power_max;			// maximum power of one engine
-	float prop_eff;				// factor to calculate prop efficiency
-	float arsp_lp_gain;			// total airspeed estimate low pass gain
-	int vtol_type;
-	int elevons_mc_lock;		// lock elevons in multicopter mode
+	int32_t vtol_type;
+	int32_t elevons_mc_lock;		// lock elevons in multicopter mode
+	float fw_min_alt;			// minimum relative altitude for FW mode (QuadChute)
+	float fw_alt_err;			// maximum negative altitude error for FW mode (Adaptive QuadChute)
+	float fw_qc_max_pitch;		// maximum pitch angle FW mode (QuadChute)
+	float fw_qc_max_roll;		// maximum roll angle FW mode (QuadChute)
+	float front_trans_time_openloop;
+	float front_trans_time_min;
+	bool wv_takeoff;
+	bool wv_loiter;
+	bool wv_land;
 };
 
+// Has to match 1:1 msg/vtol_vehicle_status.msg
 enum mode {
-	ROTARY_WING = 0,
-	FIXED_WING,
-	TRANSITION,
-	EXTERNAL
+	TRANSITION_TO_FW = 1,
+	TRANSITION_TO_MC = 2,
+	ROTARY_WING = 3,
+	FIXED_WING = 4
 };
 
 enum vtol_type {
@@ -81,6 +84,8 @@ class VtolType
 public:
 
 	VtolType(VtolAttitudeControl *att_controller);
+	VtolType(const VtolType &) = delete;
+	VtolType &operator=(const VtolType &) = delete;
 
 	virtual ~VtolType();
 
@@ -105,11 +110,6 @@ public:
 	virtual void update_fw_state();
 
 	/**
-	 * Update external state.
-	 */
-	virtual void update_external_state() {};
-
-	/**
 	 * Write control values to actuator output topics.
 	 */
 	virtual void fill_actuator_outputs() = 0;
@@ -118,12 +118,24 @@ public:
 	 * Special handling opportunity for the time right after transition to FW
 	 * before TECS is running.
 	 */
-	virtual void waiting_on_tecs() {};
+	virtual void waiting_on_tecs() {}
+
+	/**
+	 * Checks for fixed-wing failsafe condition and issues abort request if needed.
+	 */
+	void check_quadchute_condition();
+
+	/**
+	 * Returns true if we're allowed to do a mode transition on the ground.
+	 */
+	bool can_transition_on_ground();
 
 	void set_idle_mc();
 	void set_idle_fw();
 
-	mode get_mode() {return _vtol_mode;};
+	mode get_mode() {return _vtol_mode;}
+
+	virtual void parameters_update() = 0;
 
 protected:
 	VtolAttitudeControl *_attc;
@@ -131,35 +143,35 @@ protected:
 
 	struct vehicle_attitude_s		*_v_att;				//vehicle attitude
 	struct vehicle_attitude_setpoint_s	*_v_att_sp;			//vehicle attitude setpoint
-	struct mc_virtual_attitude_setpoint_s *_mc_virtual_att_sp;	// virtual mc attitude setpoint
-	struct fw_virtual_attitude_setpoint_s *_fw_virtual_att_sp;	// virtual fw attitude setpoint
-	struct vehicle_rates_setpoint_s 	*_v_rates_sp;		//vehicle rates setpoint
-	struct mc_virtual_rates_setpoint_s 	*_mc_virtual_v_rates_sp;		// virtual mc vehicle rates setpoint
-	struct fw_virtual_rates_setpoint_s 	*_fw_virtual_v_rates_sp;		// virtual fw vehicle rates setpoint
-	struct manual_control_setpoint_s	*_manual_control_sp; //manual control setpoint
+	struct vehicle_attitude_setpoint_s *_mc_virtual_att_sp;	// virtual mc attitude setpoint
+	struct vehicle_attitude_setpoint_s *_fw_virtual_att_sp;	// virtual fw attitude setpoint
 	struct vehicle_control_mode_s		*_v_control_mode;	//vehicle control mode
 	struct vtol_vehicle_status_s 		*_vtol_vehicle_status;
 	struct actuator_controls_s			*_actuators_out_0;			//actuator controls going to the mc mixer
 	struct actuator_controls_s			*_actuators_out_1;			//actuator controls going to the fw mixer (used for elevons)
 	struct actuator_controls_s			*_actuators_mc_in;			//actuator controls from mc_att_control
 	struct actuator_controls_s			*_actuators_fw_in;			//actuator controls from fw_att_control
-	struct actuator_armed_s				*_armed;					//actuator arming status
 	struct vehicle_local_position_s			*_local_pos;
+	struct vehicle_local_position_setpoint_s	*_local_pos_sp;
 	struct airspeed_s 				*_airspeed;					// airspeed
-	struct battery_status_s 			*_batt_status; 				// battery status
-	struct vehicle_status_s 			*_vehicle_status;			// vehicle status from commander app
 	struct tecs_status_s				*_tecs_status;
+	struct vehicle_land_detected_s			*_land_detected;
 
 	struct Params 					*_params;
 
 	bool flag_idle_mc = true;		//false = "idle is set for fixed wing mode"; true = "idle is set for multicopter mode"
 
+	bool _pusher_active = false;
 	float _mc_roll_weight = 1.0f;	// weight for multicopter attitude controller roll output
 	float _mc_pitch_weight = 1.0f;	// weight for multicopter attitude controller pitch output
 	float _mc_yaw_weight = 1.0f;	// weight for multicopter attitude controller yaw output
 	float _mc_throttle_weight = 1.0f;	// weight for multicopter throttle command. Used to avoid
-	// motors spinning up or cutting too fast whend doing transitions.
+
+	// motors spinning up or cutting too fast when doing transitions.
 	float _thrust_transition = 0.0f;	// thrust value applied during a front transition (tailsitter & tiltrotor only)
+
+	float _ra_hrate = 0.0f;			// rolling average on height rate for quadchute condition
+	float _ra_hrate_sp = 0.0f;		// rolling average on height rate setpoint for quadchute condition
 
 	bool _flag_was_in_trans_mode = false;	// true if mode has just switched to transition
 	hrt_abstime _trans_finished_ts = 0;

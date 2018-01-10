@@ -34,11 +34,11 @@ px4_add_module(
 	MODULE drivers__sf0x
 	MAIN sf0x
 	COMPILE_FLAGS
-		-Os
+		-Wno-sign-compare # TODO: fix all sign-compare
 	SRCS
 		sf0x.cpp
 		sf0x_parser.cpp
 	DEPENDS
 		platforms__common
 	)
-# vim: set noet ft=cmake fenc=utf-8 ff=unix : 
+# vim: set noet ft=cmake fenc=utf-8 ff=unix :

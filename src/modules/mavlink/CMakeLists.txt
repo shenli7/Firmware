@@ -1,6 +1,6 @@
 ############################################################################
 #
-#   Copyright (c) 2015 PX4 Development Team. All rights reserved.
+#   Copyright (c) 2015-2017 PX4 Development Team. All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions
@@ -30,34 +30,35 @@
 # POSSIBILITY OF SUCH DAMAGE.
 #
 ############################################################################
-if (${OS} STREQUAL "nuttx")
-	list(APPEND MODULE_CFLAGS -Wframe-larger-than=1500)
-endif()
+
+px4_add_git_submodule(TARGET git_mavlink_v2 PATH "${PX4_SOURCE_DIR}/mavlink/include/mavlink/v2.0")
+
 px4_add_module(
 	MODULE modules__mavlink
 	MAIN mavlink
-	STACK 1200
+	STACK_MAIN 1200
+	STACK_MAX 1500
 	COMPILE_FLAGS
-		${MODULE_CFLAGS}
-		-Wno-attributes
-		-Wno-packed
-		-DMAVLINK_COMM_NUM_BUFFERS=4
-		-Wno-packed
-		-Wno-tautological-constant-out-of-range-compare
-		-Os
+		-Wno-extra-semi
+		-Wno-sign-compare # TODO: fix all sign-compare
+	INCLUDES
+		${PX4_SOURCE_DIR}/mavlink/include/mavlink
 	SRCS
 		mavlink.c
-		mavlink_main.cpp
-		mavlink_mission.cpp
-		mavlink_parameters.cpp
-		mavlink_orb_subscription.cpp
-		mavlink_messages.cpp
-		mavlink_stream.cpp
-		mavlink_rate_limiter.cpp
-		mavlink_receiver.cpp
+		mavlink_command_sender.cpp
 		mavlink_ftp.cpp
 		mavlink_log_handler.cpp
+		mavlink_main.cpp
+		mavlink_messages.cpp
+		mavlink_mission.cpp
+		mavlink_orb_subscription.cpp
+		mavlink_parameters.cpp
+		mavlink_rate_limiter.cpp
+		mavlink_receiver.cpp
+		mavlink_shell.cpp
+		mavlink_stream.cpp
+		mavlink_ulog.cpp
 	DEPENDS
 		platforms__common
+		git_mavlink_v2
 	)
-# vim: set noet ft=cmake fenc=utf-8 ff=unix : 

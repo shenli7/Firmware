@@ -37,6 +37,7 @@
  */
 
 #include <px4_config.h>
+#include <px4_defines.h>
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -70,12 +71,6 @@
 #include <board_config.h>
 #include <mathlib/math/filter/LowPassFilter2p.hpp>
 #include <lib/conversion/rotation.h>
-
-/* oddly, ERROR is not defined for c++ */
-#ifdef ERROR
-# undef ERROR
-#endif
-static const int ERROR = -1;
 
 /* SPI protocol address bits */
 #define DIR_READ				(1<<7)
@@ -202,7 +197,7 @@ static const int ERROR = -1;
 #define INT_SRC_M               0x13
 
 /* default values for this device */
-#define LSM303D_ACCEL_DEFAULT_RANGE_G			8
+#define LSM303D_ACCEL_DEFAULT_RANGE_G			16
 #define LSM303D_ACCEL_DEFAULT_RATE			800
 #define LSM303D_ACCEL_DEFAULT_ONCHIP_FILTER_FREQ	50
 #define LSM303D_ACCEL_DEFAULT_DRIVER_FILTER_FREQ	30
@@ -212,12 +207,6 @@ static const int ERROR = -1;
 #define LSM303D_MAG_DEFAULT_RATE			100
 
 #define LSM303D_ONE_G					9.80665f
-
-#ifdef PX4_SPI_BUS_EXT
-#define EXTERNAL_BUS PX4_SPI_BUS_EXT
-#else
-#define EXTERNAL_BUS 0
-#endif
 
 /*
   we set the timer interrupt to run a bit faster than the desired
@@ -235,7 +224,7 @@ class LSM303D_mag;
 class LSM303D : public device::SPI
 {
 public:
-	LSM303D(int bus, const char *path, spi_dev_e device, enum Rotation rotation);
+	LSM303D(int bus, const char *path, uint32_t device, enum Rotation rotation);
 	virtual ~LSM303D();
 
 	virtual int		init();
@@ -279,13 +268,13 @@ private:
 	ringbuffer::RingBuffer	*_accel_reports;
 	ringbuffer::RingBuffer		*_mag_reports;
 
-	struct accel_scale	_accel_scale;
+	struct accel_calibration_s	_accel_scale;
 	unsigned		_accel_range_m_s2;
 	float			_accel_range_scale;
 	unsigned		_accel_samplerate;
 	unsigned		_accel_onchip_filter_bandwith;
 
-	struct mag_scale	_mag_scale;
+	struct mag_calibration_s	_mag_scale;
 	unsigned		_mag_range_ga;
 	float			_mag_range_scale;
 	unsigned		_mag_samplerate;
@@ -349,13 +338,6 @@ private:
 	 * disable I2C on the chip
 	 */
 	void			disable_i2c();
-
-	/**
-	 * Get the internal / external state
-	 *
-	 * @return true if the sensor is not on the main MCU board
-	 */
-	bool			is_external() { return (_bus == EXTERNAL_BUS); }
 
 	/**
 	 * Static trampoline from the hrt_call context; because we don't have a
@@ -549,7 +531,7 @@ private:
 };
 
 
-LSM303D::LSM303D(int bus, const char *path, spi_dev_e device, enum Rotation rotation) :
+LSM303D::LSM303D(int bus, const char *path, uint32_t device, enum Rotation rotation) :
 	SPI("LSM303D", path, bus, device, SPIDEV_MODE3,
 	    11 * 1000 * 1000 /* will be rounded to 10.4 MHz, within safety margins for LSM303D */),
 	_mag(new LSM303D_mag(this)),
@@ -573,11 +555,11 @@ LSM303D::LSM303D(int bus, const char *path, spi_dev_e device, enum Rotation rota
 	_accel_class_instance(-1),
 	_accel_read(0),
 	_mag_read(0),
-	_accel_sample_perf(perf_alloc(PC_ELAPSED, "lsm303d_accel_read")),
+	_accel_sample_perf(perf_alloc(PC_ELAPSED, "lsm303d_acc_read")),
 	_mag_sample_perf(perf_alloc(PC_ELAPSED, "lsm303d_mag_read")),
-	_bad_registers(perf_alloc(PC_COUNT, "lsm303d_bad_registers")),
-	_bad_values(perf_alloc(PC_COUNT, "lsm303d_bad_values")),
-	_accel_duplicates(perf_alloc(PC_COUNT, "lsm303d_accel_duplicates")),
+	_bad_registers(perf_alloc(PC_COUNT, "lsm303d_bad_reg")),
+	_bad_values(perf_alloc(PC_COUNT, "lsm303d_bad_val")),
+	_accel_duplicates(perf_alloc(PC_COUNT, "lsm303d_acc_dupe")),
 	_register_wait(0),
 	_accel_filter_x(LSM303D_ACCEL_DEFAULT_RATE, LSM303D_ACCEL_DEFAULT_DRIVER_FILTER_FREQ),
 	_accel_filter_y(LSM303D_ACCEL_DEFAULT_RATE, LSM303D_ACCEL_DEFAULT_DRIVER_FILTER_FREQ),
@@ -588,17 +570,11 @@ LSM303D::LSM303D(int bus, const char *path, spi_dev_e device, enum Rotation rota
 	_last_temperature(0),
 	_checked_next(0)
 {
-
-
-	// enable debug() calls
-	_debug_enabled = true;
-
 	_device_id.devid_s.devtype = DRV_ACC_DEVTYPE_LSM303D;
 
 	/* Prime _mag with parents devid. */
 	_mag->_device_id.devid = _device_id.devid;
 	_mag->_device_id.devid_s.devtype = DRV_MAG_DEVTYPE_LSM303D;
-
 
 	// default scale factors
 	_accel_scale.x_offset = 0.0f;
@@ -647,7 +623,7 @@ LSM303D::~LSM303D()
 int
 LSM303D::init()
 {
-	int ret = ERROR;
+	int ret = PX4_ERROR;
 
 	/* do SPI init (and probe) first */
 	if (SPI::init() != OK) {
@@ -702,7 +678,7 @@ LSM303D::init()
 
 	/* measurement will have generated a report, publish */
 	_accel_topic = orb_advertise_multi(ORB_ID(sensor_accel), &arp,
-					   &_accel_orb_class_instance, (is_external()) ? ORB_PRIO_VERY_HIGH : ORB_PRIO_DEFAULT);
+					   &_accel_orb_class_instance, (external()) ? ORB_PRIO_VERY_HIGH : ORB_PRIO_DEFAULT);
 
 	if (_accel_topic == nullptr) {
 		warnx("ADVERT ERR");
@@ -928,20 +904,17 @@ LSM303D::ioctl(struct file *filp, int cmd, unsigned long arg)
 				return -EINVAL;
 			}
 
-			irqstate_t flags = irqsave();
+			irqstate_t flags = px4_enter_critical_section();
 
 			if (!_accel_reports->resize(arg)) {
-				irqrestore(flags);
+				px4_leave_critical_section(flags);
 				return -ENOMEM;
 			}
 
-			irqrestore(flags);
+			px4_leave_critical_section(flags);
 
 			return OK;
 		}
-
-	case SENSORIOCGQUEUEDEPTH:
-		return _accel_reports->size();
 
 	case SENSORIOCRESET:
 		reset();
@@ -953,16 +926,9 @@ LSM303D::ioctl(struct file *filp, int cmd, unsigned long arg)
 	case ACCELIOCGSAMPLERATE:
 		return _accel_samplerate;
 
-	case ACCELIOCSLOWPASS: {
-			return accel_set_driver_lowpass_filter((float)_accel_samplerate, (float)arg);
-		}
-
-	case ACCELIOCGLOWPASS:
-		return static_cast<int>(_accel_filter_x.get_cutoff_freq());
-
 	case ACCELIOCSSCALE: {
 			/* copy scale, but only if off by a few percent */
-			struct accel_scale *s = (struct accel_scale *) arg;
+			struct accel_calibration_s *s = (struct accel_calibration_s *) arg;
 			float sum = s->x_scale + s->y_scale + s->z_scale;
 
 			if (sum > 2.0f && sum < 4.0f) {
@@ -984,7 +950,7 @@ LSM303D::ioctl(struct file *filp, int cmd, unsigned long arg)
 
 	case ACCELIOCGSCALE:
 		/* copy scale out */
-		memcpy((struct accel_scale *) arg, &_accel_scale, sizeof(_accel_scale));
+		memcpy((struct accel_calibration_s *) arg, &_accel_scale, sizeof(_accel_scale));
 		return OK;
 
 	case ACCELIOCSELFTEST:
@@ -1063,20 +1029,17 @@ LSM303D::mag_ioctl(struct file *filp, int cmd, unsigned long arg)
 				return -EINVAL;
 			}
 
-			irqstate_t flags = irqsave();
+			irqstate_t flags = px4_enter_critical_section();
 
 			if (!_mag_reports->resize(arg)) {
-				irqrestore(flags);
+				px4_leave_critical_section(flags);
 				return -ENOMEM;
 			}
 
-			irqrestore(flags);
+			px4_leave_critical_section(flags);
 
 			return OK;
 		}
-
-	case SENSORIOCGQUEUEDEPTH:
-		return _mag_reports->size();
 
 	case SENSORIOCRESET:
 		reset();
@@ -1088,19 +1051,14 @@ LSM303D::mag_ioctl(struct file *filp, int cmd, unsigned long arg)
 	case MAGIOCGSAMPLERATE:
 		return _mag_samplerate;
 
-	case MAGIOCSLOWPASS:
-	case MAGIOCGLOWPASS:
-		/* not supported, no internal filtering */
-		return -EINVAL;
-
 	case MAGIOCSSCALE:
 		/* copy scale in */
-		memcpy(&_mag_scale, (struct mag_scale *) arg, sizeof(_mag_scale));
+		memcpy(&_mag_scale, (struct mag_calibration_s *) arg, sizeof(_mag_scale));
 		return OK;
 
 	case MAGIOCGSCALE:
 		/* copy scale out */
-		memcpy((struct mag_scale *) arg, &_mag_scale, sizeof(_mag_scale));
+		memcpy((struct mag_calibration_s *) arg, &_mag_scale, sizeof(_mag_scale));
 		return OK;
 
 	case MAGIOCSRANGE:
@@ -1129,31 +1087,6 @@ int
 LSM303D::accel_self_test()
 {
 	if (_accel_read == 0) {
-		return 1;
-	}
-
-	/* inspect accel offsets */
-	if (fabsf(_accel_scale.x_offset) < 0.000001f) {
-		return 1;
-	}
-
-	if (fabsf(_accel_scale.x_scale - 1.0f) > 0.4f || fabsf(_accel_scale.x_scale - 1.0f) < 0.000001f) {
-		return 1;
-	}
-
-	if (fabsf(_accel_scale.y_offset) < 0.000001f) {
-		return 1;
-	}
-
-	if (fabsf(_accel_scale.y_scale - 1.0f) > 0.4f || fabsf(_accel_scale.y_scale - 1.0f) < 0.000001f) {
-		return 1;
-	}
-
-	if (fabsf(_accel_scale.z_offset) < 0.000001f) {
-		return 1;
-	}
-
-	if (fabsf(_accel_scale.z_scale - 1.0f) > 0.4f || fabsf(_accel_scale.z_scale - 1.0f) < 0.000001f) {
 		return 1;
 	}
 
@@ -1574,7 +1507,6 @@ LSM303D::measure()
 	 *		  74 from all measurements centers them around zero.
 	 */
 
-
 	accel_report.timestamp = hrt_absolute_time();
 
 	// use the temperature from the last mag reading
@@ -1648,6 +1580,9 @@ LSM303D::measure()
 	accel_report.scaling = _accel_range_scale;
 	accel_report.range_m_s2 = _accel_range_m_s2;
 
+	/* return device ID */
+	accel_report.device_id = _device_id.devid;
+
 	_accel_reports->force(&accel_report);
 
 	/* notify anyone waiting for data */
@@ -1681,8 +1616,7 @@ LSM303D::mag_measure()
 	} raw_mag_report;
 #pragma pack(pop)
 
-	mag_report mag_report;
-	memset(&mag_report, 0, sizeof(mag_report));
+	mag_report mag_report {};
 
 	/* start the performance counter */
 	perf_begin(_mag_sample_perf);
@@ -1707,8 +1641,8 @@ LSM303D::mag_measure()
 	 *		  74 from all measurements centers them around zero.
 	 */
 
-
 	mag_report.timestamp = hrt_absolute_time();
+	mag_report.is_external = external();
 
 	mag_report.x_raw = raw_mag_report.x;
 	mag_report.y_raw = raw_mag_report.y;
@@ -1733,6 +1667,7 @@ LSM303D::mag_measure()
 	 */
 	_last_temperature = 25 + (raw_mag_report.temperature * 0.125f);
 	mag_report.temperature = _last_temperature;
+	mag_report.device_id = _mag->_device_id.devid;
 
 	_mag_reports->force(&mag_report);
 
@@ -1946,14 +1881,14 @@ start(bool external_bus, enum Rotation rotation, unsigned range)
 
 	/* create the driver */
 	if (external_bus) {
-#ifdef PX4_SPI_BUS_EXT
-		g_dev = new LSM303D(PX4_SPI_BUS_EXT, LSM303D_DEVICE_PATH_ACCEL, (spi_dev_e)PX4_SPIDEV_EXT_ACCEL_MAG, rotation);
+#if defined(PX4_SPI_BUS_EXT) && defined(PX4_SPIDEV_EXT_ACCEL_MAG)
+		g_dev = new LSM303D(PX4_SPI_BUS_EXT, LSM303D_DEVICE_PATH_ACCEL, PX4_SPIDEV_EXT_ACCEL_MAG, rotation);
 #else
 		errx(0, "External SPI not available");
 #endif
 
 	} else {
-		g_dev = new LSM303D(PX4_SPI_BUS_SENSORS, LSM303D_DEVICE_PATH_ACCEL, (spi_dev_e)PX4_SPIDEV_ACCEL_MAG, rotation);
+		g_dev = new LSM303D(PX4_SPI_BUS_SENSORS, LSM303D_DEVICE_PATH_ACCEL, PX4_SPIDEV_ACCEL_MAG, rotation);
 	}
 
 	if (g_dev == nullptr) {
@@ -2039,13 +1974,6 @@ test()
 	warnx("accel z: \t%d\traw", (int)accel_report.z_raw);
 
 	warnx("accel range: %8.4f m/s^2", (double)accel_report.range_m_s2);
-
-	if (ERROR == (ret = ioctl(fd_accel, ACCELIOCGLOWPASS, 0))) {
-		warnx("accel antialias filter bandwidth: fail");
-
-	} else {
-		warnx("accel antialias filter bandwidth: %d Hz", ret);
-	}
 
 	int fd_mag = -1;
 	struct mag_report m_report;

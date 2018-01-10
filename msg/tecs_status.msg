@@ -6,13 +6,11 @@ uint8 TECS_MODE_LAND_THROTTLELIM = 4
 uint8 TECS_MODE_BAD_DESCENT = 5
 uint8 TECS_MODE_CLIMBOUT = 6
 
-uint64 timestamp		# timestamp, in microseconds since system start */
 
 float32 altitudeSp
 float32 altitude_filtered
 float32 flightPathAngleSp
 float32 flightPathAngle
-float32 flightPathAngleFiltered
 float32 airspeedSp
 float32 airspeed_filtered
 float32 airspeedDerivativeSp

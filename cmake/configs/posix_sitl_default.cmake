@@ -1,99 +1,203 @@
-include(posix/px4_impl_posix)
 
-set(CMAKE_TOOLCHAIN_FILE ${CMAKE_SOURCE_DIR}/cmake/toolchains/Toolchain-native.cmake)
+set(CMAKE_TOOLCHAIN_FILE ${PX4_SOURCE_DIR}/cmake/toolchains/Toolchain-native.cmake)
 
 set(config_module_list
+	drivers/boards
+	drivers/camera_trigger
 	drivers/device
-	drivers/boards/sitl
+	drivers/gps
 	drivers/pwm_out_sim
-	platforms/common
-	platforms/posix/px4_layer
-	platforms/posix/work_queue
-	platforms/posix/drivers/adcsim
-	platforms/posix/drivers/gpssim
-	platforms/posix/drivers/tonealrmsim
+	drivers/vmount
+	drivers/linux_gpio
+	drivers/airspeed
+	drivers/ets_airspeed
+	drivers/ms4525_airspeed
+	drivers/ms5525_airspeed
+	drivers/sdp3x_airspeed
+
+	modules/sensors
 	platforms/posix/drivers/accelsim
+	platforms/posix/drivers/adcsim
 	platforms/posix/drivers/airspeedsim
 	platforms/posix/drivers/barosim
+	platforms/posix/drivers/gpssim
 	platforms/posix/drivers/gyrosim
-	platforms/posix/drivers/rgbledsim
 	platforms/posix/drivers/ledsim
-	systemcmds/param
-	systemcmds/mixer
-	systemcmds/ver
+	platforms/posix/drivers/tonealrmsim
+
+	#
+	# System commands
+	#
+	#systemcmds/bl_update
+	#systemcmds/config
+	#systemcmds/dumpfile
 	systemcmds/esc_calib
-	systemcmds/reboot
-	systemcmds/topic_listener
+	systemcmds/led_control
+	systemcmds/mixer
+	systemcmds/motor_ramp
+	#systemcmds/mtd
+	#systemcmds/nshterm
+	systemcmds/param
 	systemcmds/perf
-	modules/uORB
-	modules/param
-	modules/systemlib
-	modules/systemlib/mixer
-	modules/sensors
-	modules/simulator
+	systemcmds/pwm
+	systemcmds/reboot
+	systemcmds/sd_bench
+	systemcmds/top
+	systemcmds/topic_listener
+	systemcmds/ver
+
+	#
+	# Testing
+	#
+	drivers/sf0x/sf0x_tests
+	#drivers/test_ppm
+	lib/rc/rc_tests
+	modules/commander/commander_tests
+	lib/controllib/controllib_test
+	modules/mavlink/mavlink_tests
+	modules/mc_pos_control/mc_pos_control_tests
+	modules/uORB/uORB_tests
+	systemcmds/tests
+
+	platforms/posix/tests/hello
+	platforms/posix/tests/hrt_test
+	platforms/posix/tests/muorb
+	platforms/posix/tests/vcdev_test
+	platforms/posix/tests/wqueue
+
+	#
+	# General system control
+	#
+	modules/commander
+	modules/events
+	#modules/gpio_led
+	modules/land_detector
+	modules/load_mon
 	modules/mavlink
-	modules/attitude_estimator_ekf
+	modules/navigator
+	modules/replay
+	modules/simulator
+	#modules/uavcan
+
+	#
+	# Estimation modules
+	#
 	modules/attitude_estimator_q
 	modules/ekf2
-	modules/ekf_att_pos_estimator
+	modules/local_position_estimator
 	modules/position_estimator_inav
-	modules/navigator
-	modules/vtol_att_control
-	modules/mc_pos_control
-	modules/mc_att_control
-	modules/mc_pos_control_multiplatform
-	modules/mc_att_control_multiplatform
-	modules/land_detector
+
+	#
+	# Vehicle Control
+	#
 	modules/fw_att_control
 	modules/fw_pos_control_l1
-	modules/dataman
+	modules/gnd_att_control
+	modules/gnd_pos_control
+	modules/mc_att_control
+	modules/mc_pos_control
+	modules/vtol_att_control
+
+	#
+	# Logging
+	#
+	modules/logger
 	modules/sdlog2
-	modules/commander
-	modules/controllib
-	lib/mathlib
-	lib/mathlib/math/filter
+
+	#
+	# Library modules
+	#
+	modules/dataman
+	modules/systemlib/param
+	modules/systemlib
+	modules/uORB
+
+	#
+	# Libraries
+	#
+	lib/controllib
 	lib/conversion
+	lib/DriverFramework/framework
 	lib/ecl
-	lib/external_lgpl
 	lib/geo
 	lib/geo_lookup
 	lib/launchdetection
-	lib/terrain_estimation
+	lib/led
+	lib/mixer
+	lib/mathlib
+	lib/mathlib/math/filter
+	lib/rc
 	lib/runway_takeoff
 	lib/tailsitter_recovery
+	lib/terrain_estimation
+	lib/version
+
+	#
+	# Platform
+	#
+	platforms/common
+	platforms/posix/px4_layer
+	platforms/posix/work_queue
+
+	#
+	# OBC challenge
+	#
+	examples/bottle_drop
+
+	#
+	# Rover apps
+	#
+	examples/rover_steering_control
+
+	#
+	# HippoCampus example (AUV from TUHH)
+	#
+	examples/uuv_example_app
+
+	#
+	# Segway
+	#
+	examples/segway
+
+	#
+	# Demo apps
+	#
+
+	# Tutorial code from
+	# https://px4.io/dev/px4_simple_app
 	examples/px4_simple_app
-	)
 
-set(config_extra_builtin_cmds
-	serdis
-	sercon
-	)
+	# Tutorial code from
+	# https://px4.io/dev/daemon
+	examples/px4_daemon_app
 
-set(config_sitl_rcS
-	posix-configs/SITL/init/rcS
-	CACHE FILEPATH "init script for sitl"
-	)
+	# Tutorial code from
+	# https://px4.io/dev/debug_values
+	examples/px4_mavlink_debug
 
-set(config_sitl_viewer
-	jmavsim
-	CACHE STRING "viewer for sitl"
-	)
-set_property(CACHE config_sitl_viewer
-	PROPERTY STRINGS "jmavsim;none")
+	# Tutorial code from
+	# https://px4.io/dev/example_fixedwing_control
+	examples/fixedwing_control
 
-set(config_sitl_debugger
-	disable
-	CACHE STRING "debugger for sitl"
-	)
-set_property(CACHE config_sitl_debugger
-	PROPERTY STRINGS "disable;gdb;lldb")
+	# Hardware test
+	#examples/hwtest
+)
 
+# Default config_sitl_rcS_dir (posix_sitl_default), this is overwritten later
+# for the config posix_sitl_efk2 and set again, explicitly, for posix_sitl_lpe,
+# which are based on posix_sitl_default.
+set(config_sitl_rcS_dir posix-configs/SITL/init/ekf2 CACHE INTERNAL "init script dir for sitl")
 
+set(config_sitl_viewer jmavsim CACHE STRING "viewer for sitl")
+set_property(CACHE config_sitl_viewer PROPERTY STRINGS "jmavsim;none")
 
-add_custom_target(sercon)
-set_target_properties(sercon PROPERTIES
-	MAIN "sercon" STACK "2048")
+set(config_sitl_debugger disable CACHE STRING "debugger for sitl")
+set_property(CACHE config_sitl_debugger PROPERTY STRINGS "disable;gdb;lldb")
 
-add_custom_target(serdis)
-set_target_properties(serdis PROPERTIES
-	MAIN "serdis" STACK "2048")
+# If the environment variable 'replay' is defined, we are building with replay
+# support. In this case, we enable the orb publisher rules.
+set(REPLAY_FILE "$ENV{replay}")
+if(REPLAY_FILE)
+	message("Building with uorb publisher rules support")
+	add_definitions(-DORB_USE_PUBLISHER_RULES)
+endif()

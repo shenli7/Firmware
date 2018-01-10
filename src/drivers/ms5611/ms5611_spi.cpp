@@ -66,7 +66,7 @@ device::Device *MS5611_spi_interface(ms5611::prom_u &prom_buf, bool external_bus
 class MS5611_SPI : public device::SPI
 {
 public:
-	MS5611_SPI(uint8_t bus, spi_dev_e device, ms5611::prom_u &prom_buf);
+	MS5611_SPI(uint8_t bus, uint32_t device, ms5611::prom_u &prom_buf);
 	virtual ~MS5611_SPI();
 
 	virtual int	init();
@@ -120,17 +120,17 @@ MS5611_spi_interface(ms5611::prom_u &prom_buf, uint8_t busnum)
 
 	if (busnum == PX4_SPI_BUS_EXT) {
 #ifdef PX4_SPIDEV_EXT_BARO
-		return new MS5611_SPI(busnum, (spi_dev_e)PX4_SPIDEV_EXT_BARO, prom_buf);
+		return new MS5611_SPI(busnum, PX4_SPIDEV_EXT_BARO, prom_buf);
 #else
 		return nullptr;
 #endif
 	}
 
 #endif
-	return new MS5611_SPI(busnum, (spi_dev_e)PX4_SPIDEV_BARO, prom_buf);
+	return new MS5611_SPI(busnum, PX4_SPIDEV_BARO, prom_buf);
 }
 
-MS5611_SPI::MS5611_SPI(uint8_t bus, spi_dev_e device, ms5611::prom_u &prom_buf) :
+MS5611_SPI::MS5611_SPI(uint8_t bus, uint32_t device, ms5611::prom_u &prom_buf) :
 	SPI("MS5611_SPI", nullptr, bus, device, SPIDEV_MODE3, 20 * 1000 * 1000 /* will be rounded to 10.4 MHz */),
 	_prom(prom_buf)
 {
@@ -145,17 +145,17 @@ MS5611_SPI::init()
 {
 	int ret;
 
+#if defined(PX4_SPI_BUS_RAMTRON) && \
+	(PX4_SPI_BUS_BARO == PX4_SPI_BUS_RAMTRON)
+	SPI::set_lockmode(LOCK_THREADS);
+#endif
+
 	ret = SPI::init();
 
 	if (ret != OK) {
 		DEVICE_DEBUG("SPI init failed");
 		goto out;
 	}
-
-	/* sharing a bus with NuttX drivers */
-#if defined (CONFIG_ARCH_BOARD_PX4FMU_V4)
-	//set_lockmode(SPI::LOCK_THREADS);
-#endif
 
 	/* send reset command */
 	ret = _reset();

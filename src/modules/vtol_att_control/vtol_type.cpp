@@ -40,9 +40,11 @@
 */
 
 #include "vtol_type.h"
-#include "drivers/drv_pwm_output.h"
-#include <px4_defines.h>
 #include "vtol_att_control_main.h"
+
+#include <cfloat>
+#include <px4_defines.h>
+#include <matrix/math.hpp>
 
 VtolType::VtolType(VtolAttitudeControl *att_controller) :
 	_attc(att_controller),
@@ -52,22 +54,17 @@ VtolType::VtolType(VtolAttitudeControl *att_controller) :
 	_v_att_sp = _attc->get_att_sp();
 	_mc_virtual_att_sp = _attc->get_mc_virtual_att_sp();
 	_fw_virtual_att_sp = _attc->get_fw_virtual_att_sp();
-	_v_rates_sp = _attc->get_rates_sp();
-	_mc_virtual_v_rates_sp = _attc->get_mc_virtual_rates_sp();
-	_fw_virtual_v_rates_sp = _attc->get_fw_virtual_rates_sp();
-	_manual_control_sp = _attc->get_manual_control_sp();
 	_v_control_mode = _attc->get_control_mode();
 	_vtol_vehicle_status = _attc->get_vtol_vehicle_status();
 	_actuators_out_0 = _attc->get_actuators_out0();
 	_actuators_out_1 = _attc->get_actuators_out1();
 	_actuators_mc_in = _attc->get_actuators_mc_in();
 	_actuators_fw_in = _attc->get_actuators_fw_in();
-	_armed = _attc->get_armed();
 	_local_pos = _attc->get_local_pos();
+	_local_pos_sp = _attc->get_local_pos_sp();
 	_airspeed = _attc->get_airspeed();
-	_batt_status = _attc->get_batt_status();
-	_vehicle_status = _attc->get_vehicle_status();
 	_tecs_status = _attc->get_tecs_status();
+	_land_detected = _attc->get_land_detected();
 	_params = _attc->get_params();
 
 	flag_idle_mc = true;
@@ -83,14 +80,15 @@ VtolType::~VtolType()
 */
 void VtolType::set_idle_mc()
 {
-	int ret;
-	unsigned servo_count;
-	char *dev = PWM_OUTPUT0_DEVICE_PATH;
+	const char *dev = PWM_OUTPUT0_DEVICE_PATH;
 	int fd = px4_open(dev, 0);
 
-	if (fd < 0) {PX4_WARN("can't open %s", dev);}
+	if (fd < 0) {
+		PX4_WARN("can't open %s", dev);
+	}
 
-	ret = px4_ioctl(fd, PWM_SERVO_GET_COUNT, (unsigned long)&servo_count);
+	unsigned servo_count;
+	int ret = px4_ioctl(fd, PWM_SERVO_GET_COUNT, (unsigned long)&servo_count);
 	unsigned pwm_value = _params->idle_pwm_mc;
 	struct pwm_output_values pwm_values;
 	memset(&pwm_values, 0, sizeof(pwm_values));
@@ -102,7 +100,9 @@ void VtolType::set_idle_mc()
 
 	ret = px4_ioctl(fd, PWM_SERVO_SET_MIN_PWM, (long unsigned int)&pwm_values);
 
-	if (ret != OK) {PX4_WARN("failed setting min values");}
+	if (ret != OK) {
+		PX4_WARN("failed setting min values");
+	}
 
 	px4_close(fd);
 
@@ -114,13 +114,15 @@ void VtolType::set_idle_mc()
 */
 void VtolType::set_idle_fw()
 {
-	int ret;
-	char *dev = PWM_OUTPUT0_DEVICE_PATH;
+	const char *dev = PWM_OUTPUT0_DEVICE_PATH;
 	int fd = px4_open(dev, 0);
 
-	if (fd < 0) {PX4_WARN("can't open %s", dev);}
+	if (fd < 0) {
+		PX4_WARN("can't open %s", dev);
+	}
 
 	struct pwm_output_values pwm_values;
+
 	memset(&pwm_values, 0, sizeof(pwm_values));
 
 	for (int i = 0; i < _params->vtol_motor_count; i++) {
@@ -129,9 +131,11 @@ void VtolType::set_idle_fw()
 		pwm_values.channel_count++;
 	}
 
-	ret = px4_ioctl(fd, PWM_SERVO_SET_MIN_PWM, (long unsigned int)&pwm_values);
+	int ret = px4_ioctl(fd, PWM_SERVO_SET_MIN_PWM, (long unsigned int)&pwm_values);
 
-	if (ret != OK) {PX4_WARN("failed setting min values");}
+	if (ret != OK) {
+		PX4_WARN("failed setting min values");
+	}
 
 	px4_close(fd);
 }
@@ -144,6 +148,24 @@ void VtolType::update_mc_state()
 	_mc_roll_weight = 1.0f;
 	_mc_pitch_weight = 1.0f;
 	_mc_yaw_weight = 1.0f;
+
+	// VTOL weathervane
+	_v_att_sp->disable_mc_yaw_control = false;
+
+	if (_attc->get_pos_sp_triplet()->current.valid &&
+	    !_v_control_mode->flag_control_manual_enabled) {
+
+		if (_params->wv_takeoff && _attc->get_pos_sp_triplet()->current.type == position_setpoint_s::SETPOINT_TYPE_TAKEOFF) {
+			_v_att_sp->disable_mc_yaw_control = true;
+
+		} else if (_params->wv_loiter
+			   && _attc->get_pos_sp_triplet()->current.type == position_setpoint_s::SETPOINT_TYPE_LOITER) {
+			_v_att_sp->disable_mc_yaw_control = true;
+
+		} else if (_params->wv_land && _attc->get_pos_sp_triplet()->current.type == position_setpoint_s::SETPOINT_TYPE_LAND) {
+			_v_att_sp->disable_mc_yaw_control = true;
+		}
+	}
 }
 
 void VtolType::update_fw_state()
@@ -163,8 +185,83 @@ void VtolType::update_fw_state()
 		_tecs_running_ts = hrt_absolute_time();
 	}
 
-	// tecs didn't publish yet or the position controller didn't publish yet AFTER tecs
-	if (!_tecs_running || (_tecs_running && _fw_virtual_att_sp->timestamp <= _tecs_running_ts)) {
+	// TECS didn't publish yet or the position controller didn't publish yet AFTER tecs
+	// only wait on TECS we're in a mode where it is actually running
+	if ((!_tecs_running || (_tecs_running && _fw_virtual_att_sp->timestamp <= _tecs_running_ts))
+	    && _v_control_mode->flag_control_altitude_enabled) {
+
 		waiting_on_tecs();
 	}
+
+	check_quadchute_condition();
+}
+
+void VtolType::update_transition_state()
+{
+	check_quadchute_condition();
+}
+
+bool VtolType::can_transition_on_ground()
+{
+	return !_v_control_mode->flag_armed || _land_detected->landed;
+}
+
+void VtolType::check_quadchute_condition()
+{
+
+	if (_v_control_mode->flag_armed && !_land_detected->landed) {
+		matrix::Eulerf euler = matrix::Quatf(_v_att->q);
+
+		// fixed-wing minimum altitude
+		if (_params->fw_min_alt > FLT_EPSILON) {
+
+			if (-(_local_pos->z) < _params->fw_min_alt) {
+				_attc->abort_front_transition("QuadChute: Minimum altitude breached");
+			}
+		}
+
+		// adaptive quadchute
+		if (_params->fw_alt_err > FLT_EPSILON && _v_control_mode->flag_control_altitude_enabled) {
+
+			// We use tecs for tracking in FW and local_pos_sp during transitions
+			if (_tecs_running) {
+				// 1 second rolling average
+				_ra_hrate = (49 * _ra_hrate + _tecs_status->flightPathAngle) / 50;
+				_ra_hrate_sp = (49 * _ra_hrate_sp + _tecs_status->flightPathAngleSp) / 50;
+
+				// are we dropping while requesting significant ascend?
+				if (((_tecs_status->altitudeSp - _tecs_status->altitude_filtered) > _params->fw_alt_err) &&
+				    (_ra_hrate < -1.0f) &&
+				    (_ra_hrate_sp > 1.0f)) {
+
+					_attc->abort_front_transition("QuadChute: loss of altitude");
+				}
+
+			} else {
+				const bool height_error = _local_pos->z_valid && ((-_local_pos_sp->z - -_local_pos->z) > _params->fw_alt_err);
+				const bool height_rate_error = _local_pos->v_z_valid && (_local_pos->vz > 1.0f) && (_local_pos->z_deriv > 1.0f);
+
+				if (height_error && height_rate_error) {
+					_attc->abort_front_transition("QuadChute: large altitude error");
+				}
+			}
+		}
+
+		// fixed-wing maximum pitch angle
+		if (_params->fw_qc_max_pitch > 0) {
+
+			if (fabsf(euler.theta()) > fabsf(math::radians(_params->fw_qc_max_pitch))) {
+				_attc->abort_front_transition("Maximum pitch angle exceeded");
+			}
+		}
+
+		// fixed-wing maximum roll angle
+		if (_params->fw_qc_max_roll > 0) {
+
+			if (fabsf(euler.phi()) > fabsf(math::radians(_params->fw_qc_max_roll))) {
+				_attc->abort_front_transition("Maximum roll angle exceeded");
+			}
+		}
+	}
+
 }
